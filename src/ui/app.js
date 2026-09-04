@@ -745,16 +745,15 @@ function maybeStartSketchTour() {
   const tryStart = (attempt = 0) => {
     if (onboardingDemoActive) return;
     if (state.inputMode !== 'draw') return;
-    const tour = GuidedTour.getShared();
-    if (tour.isActive()) {
-      // Wait until app demo / other tour fully tears down
-      if (attempt < 10) setTimeout(() => tryStart(attempt + 1), 200);
+    // Don't overlap the app cinematic tour
+    if (GuidedTour.getShared().isActive()) {
+      if (attempt < 12) setTimeout(() => tryStart(attempt + 1), 250);
       return;
     }
     onboarding.start(false);
   };
 
-  setTimeout(() => tryStart(0), 380);
+  setTimeout(() => tryStart(0), 420);
 }
 
 function setupModeToggles() {

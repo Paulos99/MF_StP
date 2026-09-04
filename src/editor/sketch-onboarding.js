@@ -1,147 +1,179 @@
-import {
-  GuidedTour,
-  openMobileSidebar,
-  closeMobileSidebar,
-  tourIsMobileLayout,
-} from '../ui/guided-tour.js';
+import { TutorialDemoPlayer } from './tutorial-demo.js';
 
-export const SKETCH_TUTORIAL_KEY = 'mf-sketch-tutorial-v2';
+export const SKETCH_TUTORIAL_KEY = 'mf-sketch-tutorial-v3';
 
 export const SKETCH_TUTORIAL_STEPS = [
   {
     id: 'contour',
-    target: '#sketchCanvas',
-    title: 'Создайте контур',
-    text: 'Кликайте по сетке с шагом 1 м. Линии выравниваются по осям. Замкните контур красной точкой старта.',
-    textMobile: 'Короткий тап по сетке — точка. Свайп по пустому месту — сдвиг схемы. Замкните контур красной точкой старта.',
-    beforeStep: async () => {
-      if (tourIsMobileLayout()) closeMobileSidebar();
-    },
+    title: '???????? ??????',
+    subtitle: '??? ??????',
+    text: '???????? ?? ????? ? ????? 1 ?. ????? ????????????? ?? ??????????? ? ?????????. ??? ????????? ??????? ??????? ????? ??????.',
+    demo: 'draw',
   },
   {
     id: 'dimensions',
-    target: '#sketchCanvas',
-    title: 'Размеры сторон',
-    text: 'Кликните по стороне — появятся кнопки «Изменить размер» и «Проёмы».',
-    textMobile: 'Тапните по стороне — появятся крупные кнопки размера и проёмов.',
-    beforeStep: async () => {
-      if (tourIsMobileLayout()) closeMobileSidebar();
-    },
+    title: '??????? ???????',
+    text: '???????? ?? ??????? ? ????? ? ???????? ???????? ?????? �???????? ??????� ? �??????�.',
+    demo: 'dimension',
   },
   {
     id: 'edit',
-    target: '#sketchCanvas',
-    title: 'Форма и углы',
-    text: 'Перетащите угол по сетке. Удерживайте угол ~0,5 с, чтобы удалить его.',
-    textMobile: 'Перетащите угол. Удерживайте ~0,5 с — удаление угла.',
-    beforeStep: async () => {
-      if (tourIsMobileLayout()) closeMobileSidebar();
-    },
+    title: '???????? ?????',
+    text: '?????????? ???? ?? ?????, ????? ??????????????? ?????.',
+    demo: 'drag',
+  },
+  {
+    id: 'delete',
+    title: '??????? ????',
+    text: '??????????? ???? ~1 ??? ? ???????? ???? ?????????, ????? ??????????? ????????.',
+    demo: 'delete',
   },
   {
     id: 'navigation',
-    target: '.sketch-float-zoom',
-    title: 'Масштаб и фото',
-    text: 'Колёсико — зум. Пробел + перетаскивание или средняя кнопка — панорама. Камера загружает фото плана.',
-    textMobile: 'Pinch — зум, один палец — сдвиг. Кнопки ± и камера тоже в углу схемы.',
-    beforeStep: async () => {
-      if (tourIsMobileLayout()) closeMobileSidebar();
-    },
-    radius: 16,
+    title: '??????? ? ???????????',
+    text: '???????? ???? ? ??????????? ? ?????????. ??????? ???????? ? ?????????????? ?????. ??? ??????????? ?????? ? ?????????????? ????? ???????.',
+    demo: 'navigation',
   },
   {
-    id: 'height',
-    target: '#drawHeight',
-    title: 'Высота и проёмы',
-    text: 'Укажите высоту стен. После контура проёмы — через сторону стены или «Настроить стены».',
-    textMobile: 'Высота стен — в параметрах. Проёмы: тап по стороне или «Настроить стены».',
-    beforeStep: async () => {
-      if (tourIsMobileLayout()) openMobileSidebar();
-    },
-    scrollBlock: 'center',
+    id: 'photo',
+    title: '???? ?????',
+    text: '??????? ?????? ?????? ????? ? ????? (+/?), ????? ????????? ???? ????? ??? ????????.',
+    demo: 'photo',
+  },
+  {
+    id: 'openings',
+    title: '??????',
+    text: '???????? ????? ? ??????? �??????� ? ????????? ????????? ?????? ? ????. ??? �????????? ?????� ? ??????? ??????.',
+    demo: 'sketch-openings',
+  },
+  {
+    id: 'done',
+    title: '??????',
+    text: '??????? �??????� ? ????? ? ?????? ?????????? ? ????????????.',
+    demo: 'done',
   },
 ];
 
-/**
- * Spotlight sketch tour — compatible API for SketchEditor.
- */
+function readDone() {
+  try {
+    return localStorage.getItem(SKETCH_TUTORIAL_KEY) === 'done';
+  } catch {
+    return false;
+  }
+}
+
+function writeDone() {
+  try {
+    localStorage.setItem(SKETCH_TUTORIAL_KEY, 'done');
+  } catch { /* ignore */ }
+}
+
 export class SketchOnboarding {
-  constructor(_overlayEl, { onStepChange, onComplete, onSkip } = {}) {
+  constructor(overlayEl, { onStepChange, onComplete, onSkip } = {}) {
+    this.overlay = overlayEl;
     this.onStepChange = onStepChange;
     this.onComplete = onComplete;
     this.onSkip = onSkip;
-    this.active = false;
     this.step = 0;
-    this._tour = GuidedTour.getShared();
-    if (_overlayEl) _overlayEl.hidden = true;
+    this.active = false;
+    this._demoPlayer = null;
+    this._bind();
+  }
+
+  _bind() {
+    this.overlay.querySelector('.tutorial-prev')?.addEventListener('click', () => this.prev());
+    this.overlay.querySelector('.tutorial-next')?.addEventListener('click', () => this.next());
+    this.overlay.querySelector('.tutorial-skip')?.addEventListener('click', () => this.dismiss());
+  }
+
+  _ensureDemoPlayer() {
+    const demoEl = this.overlay.querySelector('.tutorial-demo');
+    if (!demoEl) return null;
+    if (!this._demoPlayer) {
+      this._demoPlayer = new TutorialDemoPlayer(demoEl);
+    }
+    return this._demoPlayer;
   }
 
   shouldAutoStart() {
-    return this._tour.shouldAutoStart(SKETCH_TUTORIAL_KEY);
+    return !readDone();
   }
 
   start(force = false) {
     if (!force && !this.shouldAutoStart()) return;
-    this._run(0, force);
+    if (!this.overlay) return;
+    this.step = 0;
+    this.active = true;
+    this.overlay.hidden = false;
+    this._render();
+    this.onStepChange?.(this.getCurrentStep());
   }
 
   startOpenings(force = false) {
     if (!force && !this.shouldAutoStart()) return;
-    const idx = SKETCH_TUTORIAL_STEPS.findIndex((s) => s.id === 'height');
-    this._run(idx >= 0 ? idx : SKETCH_TUTORIAL_STEPS.length - 1, force);
-  }
-
-  async _run(startIndex, force) {
+    if (!this.overlay) return;
+    this.step = SKETCH_TUTORIAL_STEPS.findIndex((s) => s.id === 'openings');
+    if (this.step < 0) this.step = 6;
     this.active = true;
-    const steps = SKETCH_TUTORIAL_STEPS.map((s) => ({
-      ...s,
-      beforeStep: async (step, ctx) => {
-        await s.beforeStep?.(step, ctx);
-        this.step = SKETCH_TUTORIAL_STEPS.indexOf(s);
-        this.onStepChange?.(s);
-      },
-    }));
-
-    await this._tour.start(steps, {
-      force,
-      storageKey: SKETCH_TUTORIAL_KEY,
-      startIndex,
-      allowSkip: false,
-      onComplete: () => {
-        this.active = false;
-        this.onComplete?.();
-      },
-      onSkip: () => {
-        this.active = false;
-        this.onSkip?.();
-      },
-    });
+    this.overlay.hidden = false;
+    this._render();
+    this.onStepChange?.(this.getCurrentStep());
   }
 
   dismiss() {
-    if (this._tour.isActive() && this._tour.storageKey === SKETCH_TUTORIAL_KEY) {
-      this._tour.skip();
-    }
     this.active = false;
+    if (this.overlay) this.overlay.hidden = true;
+    this._demoPlayer?.stop();
+    writeDone();
+    this.onSkip?.();
   }
 
   complete() {
-    if (this._tour.isActive() && this._tour.storageKey === SKETCH_TUTORIAL_KEY) {
-      this._tour.complete();
-    }
     this.active = false;
+    if (this.overlay) this.overlay.hidden = true;
+    this._demoPlayer?.stop();
+    writeDone();
+    this.onComplete?.();
   }
 
   prev() {
-    this._tour.prev();
+    if (this.step > 0) {
+      this.step--;
+      this._render();
+      this.onStepChange?.(this.getCurrentStep());
+    }
   }
 
   next() {
-    this._tour.next();
+    if (this.step < SKETCH_TUTORIAL_STEPS.length - 1) {
+      this.step++;
+      this._render();
+      this.onStepChange?.(this.getCurrentStep());
+    } else {
+      this.complete();
+    }
   }
 
   getCurrentStep() {
-    return SKETCH_TUTORIAL_STEPS[this.step] || this._tour.getCurrentStep();
+    return SKETCH_TUTORIAL_STEPS[this.step];
+  }
+
+  _render() {
+    const s = SKETCH_TUTORIAL_STEPS[this.step];
+    this.overlay.querySelector('.tutorial-title').textContent = s.title;
+    const sub = this.overlay.querySelector('.tutorial-subtitle');
+    sub.textContent = s.subtitle ?? '';
+    sub.hidden = !s.subtitle;
+    this.overlay.querySelector('.tutorial-text').textContent = s.text;
+    this.overlay.querySelector('.tutorial-step-indicator').textContent =
+      `${this.step + 1} / ${SKETCH_TUTORIAL_STEPS.length}`;
+    this.overlay.querySelector('.tutorial-prev').disabled = this.step === 0;
+    const nextBtn = this.overlay.querySelector('.tutorial-next');
+    nextBtn.textContent = this.step === SKETCH_TUTORIAL_STEPS.length - 1 ? '???????' : '?????';
+    nextBtn.setAttribute('aria-label', nextBtn.textContent);
+
+    const player = this._ensureDemoPlayer();
+    player?.start(s.demo);
   }
 }
 
@@ -149,22 +181,34 @@ export const WALL_TUTORIAL_KEY = 'mf-wall-tutorial-v1';
 
 export const WALL_TUTORIAL_STEPS = [
   {
-    title: 'Выберите стену',
-    text: 'Кликните по стене на плане или выберите чип — откроется развёртка.',
+    title: '???????? ?????',
+    text: '???????? ?? ????? ?? ????? ??? ???????? ??? ? ????????? ?????????.',
+    demo: 'wall-select',
   },
   {
-    title: 'Добавьте проём',
-    text: 'Нажмите «+ Дверь» или «+ Окно», затем перетащите проём в нужное место.',
+    title: '???????? ?????',
+    text: '??????? �+ ?????� ??? �+ ????�, ????? ?????????? ????? ? ?????? ?????.',
+    demo: 'wall-opening',
   },
   {
-    title: 'Уточните размеры',
-    text: 'Кликните по проёму и задайте точные размеры в панели свойств.',
+    title: '???????? ???????',
+    text: '???????? ?? ?????? ? ??????? ?????? ??????? ? ?????? ???????.',
+    demo: 'wall-form',
   },
 ];
 
 export class WallOnboarding {
-  constructor() {
+  constructor(overlayEl) {
+    this.overlay = overlayEl;
     this.step = 0;
+    this._demoPlayer = null;
+    this._bind();
+  }
+
+  _bind() {
+    this.overlay.querySelector('.tutorial-prev')?.addEventListener('click', () => this.prev());
+    this.overlay.querySelector('.tutorial-next')?.addEventListener('click', () => this.next());
+    this.overlay.querySelector('.tutorial-skip')?.addEventListener('click', () => this.skip());
   }
 
   shouldAutoStart() {
@@ -175,12 +219,59 @@ export class WallOnboarding {
     }
   }
 
-  start() { /* unused */ }
+  start(force = false) {
+    if (!force && !this.shouldAutoStart()) return;
+    this.step = 0;
+    this.overlay.hidden = false;
+    this._render();
+  }
+
   skip() {
+    this.overlay.hidden = true;
+    this._demoPlayer?.stop();
     try {
       localStorage.setItem(WALL_TUTORIAL_KEY, 'done');
     } catch { /* ignore */ }
   }
-  prev() {}
-  next() {}
+
+  prev() {
+    if (this.step > 0) {
+      this.step--;
+      this._render();
+    }
+  }
+
+  next() {
+    if (this.step < WALL_TUTORIAL_STEPS.length - 1) {
+      this.step++;
+      this._render();
+    } else {
+      this.skip();
+    }
+  }
+
+  _render() {
+    const s = WALL_TUTORIAL_STEPS[this.step];
+    this.overlay.querySelector('.tutorial-title').textContent = s.title;
+    const sub = this.overlay.querySelector('.tutorial-subtitle');
+    if (sub) sub.hidden = true;
+    this.overlay.querySelector('.tutorial-text').textContent = s.text;
+    this.overlay.querySelector('.tutorial-step-indicator').textContent =
+      `${this.step + 1} / ${WALL_TUTORIAL_STEPS.length}`;
+    this.overlay.querySelector('.tutorial-prev').disabled = this.step === 0;
+    const nextBtn = this.overlay.querySelector('.tutorial-next');
+    nextBtn.textContent = this.step === WALL_TUTORIAL_STEPS.length - 1 ? '???????' : '?????';
+
+    let demoEl = this.overlay.querySelector('.tutorial-demo');
+    if (!demoEl) {
+      demoEl = document.createElement('div');
+      demoEl.className = 'tutorial-demo';
+      this.overlay.querySelector('.tutorial-text')?.after(demoEl);
+    }
+
+    if (!this._demoPlayer) {
+      this._demoPlayer = new TutorialDemoPlayer(demoEl);
+    }
+    this._demoPlayer.start(s.demo);
+  }
 }
