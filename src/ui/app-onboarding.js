@@ -149,7 +149,7 @@ async function demoOpenings(cursor, tour) {
   // Park card once — no further jumps this step
   await narrate(tour, {
     title: 'Проёмы в стенах',
-    text: 'Сначала вкладка «Стены», затем редактор проёмов — дверь слева, окно справа.',
+    text: 'Сначала вкладка «Стены», затем редактор проёмов — добавим дверь и окно.',
     target: wallsBtn || openingsBtn || '.scheme-card',
     radius: 12,
     stepLabel: '4 / 8',
@@ -193,14 +193,6 @@ async function demoOpenings(cursor, tour) {
   }
   editor?._placeOpeningAside?.('left');
   await sleep(BEAT + 200);
-
-  // 4) Window on the right — clearly apart from the door
-  tour.setCopy({
-    title: 'Проёмы в стенах',
-    text: 'Окно — у правого края той же стены, не поверх двери.',
-    stepLabel: '4 / 8',
-  });
-  await sleep(500);
 
   const winBtn = $('#sketchAddWindowBtn');
   if (winBtn) {
