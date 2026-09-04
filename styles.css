@@ -5801,6 +5801,23 @@ body.mobile-sidebar-open .workspace-sidebar {
   opacity: 0.9;
 }
 
+.entry-picker.has-mode ~ .entry-block--area:not(.is-open) {
+  opacity: 0.58;
+}
+
+.entry-picker.has-mode ~ .entry-block--area:not(.is-open):hover {
+  opacity: 0.9;
+}
+
+.entry-block--area {
+  margin-top: 10px;
+  padding-bottom: 4px;
+}
+
+.shared-reveal.is-open + .entry-block--area {
+  margin-top: 12px;
+}
+
 .entry-card {
   display: flex;
   flex-direction: row;

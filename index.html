@@ -85,33 +85,6 @@
                   </div>
                 </div>
               </div>
-
-              <div class="entry-block" data-entry="area">
-                <button type="button" class="entry-card entry-card--secondary" data-entry="area" id="entryAreaBtn" aria-expanded="false" aria-controls="quickCalcCard">
-                  <span class="entry-card__body">
-                    <span class="entry-card__title">По площади</span>
-                    <span class="entry-card__desc">Нет размеров стен — примерная оценка в м²</span>
-                  </span>
-                  <span class="entry-card__chevron" aria-hidden="true"></span>
-                </button>
-                <div class="entry-block__collapse">
-                  <div class="entry-block__inner">
-                    <div class="card input-panel expanded active entry-panel" id="quickCalcCard" data-mode-panel="area">
-                      <h2 class="calc-panel-title">Оценка по площади</h2>
-                      <p class="hint-text">Приблизительный расчёт без схемы — когда нет точных размеров.</p>
-                      <div class="form-group">
-                        <label for="areaOnlyInput">Площадь потолка, м²</label>
-                        <input type="number" id="areaOnlyInput" placeholder="35" step="0.1" min="0.1" />
-                      </div>
-                      <div id="areaWallsBlock">
-                        <p class="hint-text">Стены (площадь каждой, м²)</p>
-                        <div id="areaWallsList" class="area-walls-list"></div>
-                        <button type="button" class="btn btn-secondary btn-sm area-add-wall-btn" id="addAreaWallBtn">+ Добавить стену</button>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
             </div>
 
             <div id="activeModeBar" class="active-mode-bar" hidden>
@@ -169,6 +142,33 @@
               </div>
               <div id="schemeWallsBlock" hidden aria-hidden="true"></div>
             </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="entry-block entry-block--area" data-entry="area">
+              <button type="button" class="entry-card entry-card--secondary" data-entry="area" id="entryAreaBtn" aria-expanded="false" aria-controls="quickCalcCard">
+                <span class="entry-card__body">
+                  <span class="entry-card__title">По площади</span>
+                  <span class="entry-card__desc">Нет размеров стен — примерная оценка в м²</span>
+                </span>
+                <span class="entry-card__chevron" aria-hidden="true"></span>
+              </button>
+              <div class="entry-block__collapse">
+                <div class="entry-block__inner">
+                  <div class="card input-panel expanded active entry-panel" id="quickCalcCard" data-mode-panel="area">
+                    <h2 class="calc-panel-title">Оценка по площади</h2>
+                    <p class="hint-text">Приблизительный расчёт без схемы — когда нет точных размеров.</p>
+                    <div class="form-group">
+                      <label for="areaOnlyInput">Площадь потолка, м²</label>
+                      <input type="number" id="areaOnlyInput" placeholder="35" step="0.1" min="0.1" />
+                    </div>
+                    <div id="areaWallsBlock">
+                      <p class="hint-text">Стены (площадь каждой, м²)</p>
+                      <div id="areaWallsList" class="area-walls-list"></div>
+                      <button type="button" class="btn btn-secondary btn-sm area-add-wall-btn" id="addAreaWallBtn">+ Добавить стену</button>
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>
