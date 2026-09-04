@@ -308,16 +308,23 @@ function buildSteps() {
     {
       id: 'welcome',
       async play(cursor, tour) {
+        const title = $('.app-header__text') || $('.app-header');
         await narrate(tour, {
           title: 'Калькулятор MultiFRAME',
           text: 'Считает панели и комплектующие для звукоизоляции потолка и стен — со схемой раскладки и сметой.',
-          target: '.app-header',
+          target: title,
           radius: 16,
           stepLabel: stepLabel(1, total),
           forceCard: true,
         });
-        await cursor.moveTo($('#appHelpBtn') || $('.app-header'), { duration: CURSOR_MS });
-        await sleep(BEAT * 0.4);
+        if (title) {
+          const r = title.getBoundingClientRect();
+          const y = r.top + r.height * 0.55;
+          await cursor.moveTo({ x: r.left + 12, y }, { duration: Math.round(CURSOR_MS * 0.7) });
+          await sleep(120);
+          await cursor.moveTo({ x: r.right - 12, y }, { duration: CURSOR_MS });
+        }
+        await sleep(BEAT * 0.45);
       },
     },
     {
