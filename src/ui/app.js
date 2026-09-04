@@ -17,6 +17,9 @@ import { GuidedTour } from './guided-tour.js';
 const AUTO_RECALC_MS = 400;
 const MOBILE_MQ = '(max-width: 899px)';
 
+/** When true, mode switches from demo cursor must not kill the tour */
+let onboardingDemoActive = false;
+
 const state = {
   inputMode: null,
   areaValue: null,
@@ -661,7 +664,7 @@ function setInputMode(mode, { confirmSwitch = false, preserveGeometry = false } 
   const prev = state.inputMode;
   state.inputMode = next || null;
 
-  if (prev !== next) {
+  if (prev !== next && !onboardingDemoActive) {
     dismissAppTourIfActive();
   }
 
@@ -735,9 +738,11 @@ function setInputMode(mode, { confirmSwitch = false, preserveGeometry = false } 
 }
 
 function maybeStartSketchTour() {
+  if (onboardingDemoActive) return;
   const onboarding = sketchEditor?.onboarding;
   if (!onboarding?.shouldAutoStart?.()) return;
   setTimeout(() => {
+    if (onboardingDemoActive) return;
     if (state.inputMode !== 'draw') return;
     if (GuidedTour.getShared().isActive()) return;
     onboarding.start(false);
@@ -1636,7 +1641,14 @@ function init() {
   loadFromUrl();
   if (!state.inputMode) updateSchemeModeUi();
 
-  const appOnboarding = setupAppOnboarding();
+  const appOnboarding = setupAppOnboarding({
+    getInputMode: () => state.inputMode,
+    setInputMode: (mode, opts) => setInputMode(mode, opts),
+    runCalculation: (opts) => runCalculation(opts || { silent: true }),
+    applySketchTemplate: (name) => sketchEditor?._applyTemplate?.(name),
+    onDemoStart: () => { onboardingDemoActive = true; },
+    onDemoEnd: () => { onboardingDemoActive = false; },
+  });
   if (!state.inputMode) {
     appOnboarding.maybeAutoStart();
   }

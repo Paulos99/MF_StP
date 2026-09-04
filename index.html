@@ -371,7 +371,7 @@
                 <div class="stat-label">Стоимость панелей</div>
                 <div class="stat-value" id="totalCost" data-raw="0">0 ₽</div>
               </div>
-              <a class="stat-card stat-card-button" href="https://stp.store/catalog/zvukoizolyatsiya-pomeshcheniy/zvukoizolyatsiya-dlya-potolka/zvukoizolyatsionnaya-panel-dlya-potolka-stp-multiframe/" target="_blank" rel="noopener noreferrer">
+              <a class="stat-card stat-card-button" id="buyMultiframeBtn" href="https://stp.store/catalog/zvukoizolyatsiya-pomeshcheniy/zvukoizolyatsiya-dlya-potolka/zvukoizolyatsionnaya-panel-dlya-potolka-stp-multiframe/" target="_blank" rel="noopener noreferrer">
                 <img src="./buy.png" alt="" class="stat-card-button__icon" width="22" height="22" onerror="this.style.display='none'">
                 <span class="stat-card-button__text">Купить MultiFRAME</span>
               </a>
@@ -502,6 +502,7 @@
   <input type="hidden" id="wallHeight" value="2.7" />
 
   <div id="guidedTourRoot" class="tour-root" hidden>
+    <div class="tour-blocker" hidden aria-hidden="true"></div>
     <div class="tour-spotlight is-hidden" aria-hidden="true"></div>
     <div class="tour-card" role="dialog" aria-modal="true" aria-labelledby="tourTitle">
       <div class="tour-card__body">

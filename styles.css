@@ -2593,29 +2593,34 @@ body.sketch-modal-open {
     display: none !important;
 }
 
+.tour-blocker {
+    position: fixed;
+    inset: 0;
+    z-index: 0;
+    pointer-events: auto;
+    background: transparent;
+}
+
 .tour-spotlight {
     position: fixed;
     pointer-events: none;
-    box-shadow: 0 0 0 9999px rgba(32, 36, 40, 0.72);
+    box-shadow: 0 0 0 9999px rgba(32, 36, 40, 0.62);
     border: 2px solid rgba(1, 100, 79, 0.85);
     background: transparent;
-    transition: top 280ms var(--ease-out), left 280ms var(--ease-out),
-      width 280ms var(--ease-out), height 280ms var(--ease-out),
-      border-radius 280ms var(--ease-out);
+    transition: top 0.48s var(--ease-out), left 0.48s var(--ease-out),
+      width 0.48s var(--ease-out), height 0.48s var(--ease-out),
+      border-radius 0.48s var(--ease-out), box-shadow 0.4s ease;
     z-index: 1;
-    animation: tour-pulse 1.8s var(--ease-out) infinite;
+}
+
+body.tour-demo-playing .tour-spotlight {
+    box-shadow: 0 0 0 9999px rgba(32, 36, 40, 0.48);
 }
 
 .tour-spotlight.is-hidden {
     opacity: 0;
-    box-shadow: 0 0 0 9999px rgba(32, 36, 40, 0.55);
+    box-shadow: 0 0 0 9999px rgba(32, 36, 40, 0.4);
     border-color: transparent;
-    animation: none;
-}
-
-@keyframes tour-pulse {
-    0%, 100% { box-shadow: 0 0 0 9999px rgba(32, 36, 40, 0.72), 0 0 0 0 rgba(1, 100, 79, 0.35); }
-    50% { box-shadow: 0 0 0 9999px rgba(32, 36, 40, 0.72), 0 0 0 6px rgba(1, 100, 79, 0.18); }
 }
 
 .tour-card {
@@ -2629,12 +2634,24 @@ body.sketch-modal-open {
     padding: 18px 18px 14px;
     box-shadow: 0 12px 40px rgba(17, 24, 39, 0.22);
     font-family: 'Manrope', system-ui, sans-serif;
-    animation: tour-card-in 280ms var(--ease-out);
+    transition: left 0.48s var(--ease-out), top 0.48s var(--ease-out),
+      width 0.35s var(--ease-out), opacity 0.28s ease, transform 0.28s var(--ease-out);
+    will-change: left, top;
 }
 
-@keyframes tour-card-in {
-    from { opacity: 0; transform: translateY(8px); }
-    to { opacity: 1; transform: none; }
+.tour-card.tour-card--no-motion {
+    transition: none !important;
+}
+
+.tour-card.is-updating .tour-title,
+.tour-card.is-updating .tour-text {
+    opacity: 0.35;
+    transition: opacity 0.18s ease;
+}
+
+.tour-card:not(.is-updating) .tour-title,
+.tour-card:not(.is-updating) .tour-text {
+    transition: opacity 0.28s ease;
 }
 
 .tour-title {
@@ -2648,8 +2665,16 @@ body.sketch-modal-open {
 .tour-text {
     margin: 0 0 14px;
     font-size: 0.9rem;
-    line-height: 1.45;
+    line-height: 1.5;
     color: var(--text-secondary);
+}
+
+body.tour-demo-playing .tour-nav {
+    display: none;
+}
+
+body.tour-demo-playing .tour-skip {
+    margin-top: 4px;
 }
 
 .tour-nav {
@@ -2720,6 +2745,68 @@ body.sketch-modal-open {
 
 .tour-skip:hover {
     color: var(--accent-color);
+}
+
+/* Virtual demo cursor */
+.tour-cursor {
+    position: fixed;
+    left: 0;
+    top: 0;
+    z-index: 5;
+    width: 28px;
+    height: 28px;
+    margin: -2px 0 0 -2px;
+    color: #111;
+    filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.35));
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.25s ease;
+    will-change: transform;
+}
+
+.tour-cursor.is-visible {
+    opacity: 1;
+}
+
+.tour-cursor.is-pressing {
+    color: var(--accent-color);
+}
+
+.tour-cursor__svg {
+    display: block;
+}
+
+.tour-cursor__ripple {
+    position: absolute;
+    left: 2px;
+    top: 2px;
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    border: 2px solid var(--accent-color);
+    opacity: 0;
+    transform: scale(0.4);
+    pointer-events: none;
+}
+
+.tour-cursor__ripple.is-burst {
+    animation: tour-cursor-burst 0.45s var(--ease-out) forwards;
+}
+
+@keyframes tour-cursor-burst {
+    0% { opacity: 0.9; transform: scale(0.4); }
+    100% { opacity: 0; transform: scale(2.4); }
+}
+
+.tour-demo-pulse {
+    animation: tour-demo-pulse 0.7s var(--ease-out) 1;
+    box-shadow: 0 0 0 0 rgba(1, 100, 79, 0.45);
+}
+
+@keyframes tour-demo-pulse {
+    0% { box-shadow: 0 0 0 0 rgba(1, 100, 79, 0.45); }
+    70% { box-shadow: 0 0 0 12px rgba(1, 100, 79, 0); }
+    100% { box-shadow: 0 0 0 0 rgba(1, 100, 79, 0); }
 }
 
 .app-header__help {
@@ -2804,7 +2891,9 @@ body.sketch-modal-open {
 @media (prefers-reduced-motion: reduce) {
     .tour-spotlight,
     .tour-card,
-    .tour-card--sheet {
+    .tour-card--sheet,
+    .tour-cursor,
+    .tour-demo-pulse {
         transition: none !important;
         animation: none !important;
     }

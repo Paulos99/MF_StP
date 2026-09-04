@@ -1,6 +1,7 @@
 const MOBILE_MQ = '(max-width: 899px)';
 const SPOTLIGHT_PAD = 10;
 const LAYOUT_WAIT_MS = 80;
+const CARD_MOVE_MS = 480;
 
 let activeTour = null;
 
@@ -23,6 +24,7 @@ function waitFrames(ms = LAYOUT_WAIT_MS) {
 function resolveTarget(selector) {
   if (!selector) return null;
   if (typeof selector === 'function') return selector();
+  if (selector instanceof Element) return selector;
   return document.querySelector(selector);
 }
 
@@ -50,6 +52,7 @@ export class GuidedTour {
     this.root = null;
     this.spotlight = null;
     this.card = null;
+    this.blocker = null;
     this.titleEl = null;
     this.textEl = null;
     this.stepEl = null;
@@ -61,9 +64,11 @@ export class GuidedTour {
     this.stepIndex = 0;
     this.active = false;
     this.storageKey = null;
+    this.demoMode = false;
     this._wasSidebarOpen = false;
     this._onComplete = null;
     this._onSkip = null;
+    this._cardPos = null;
     this._boundKey = (e) => this._onKey(e);
     this._boundResize = () => this._onViewportChange();
     this._boundScroll = () => {
@@ -71,7 +76,7 @@ export class GuidedTour {
     };
     this._mq = window.matchMedia(MOBILE_MQ);
     this._boundMq = () => {
-      if (this.active) this.skip({ silent: false });
+      if (this.active && !this.demoMode) this.skip({ silent: false });
     };
 
     this._ensureDom();
@@ -96,7 +101,7 @@ export class GuidedTour {
 
   /**
    * @param {Array} steps
-   * @param {{ force?: boolean, storageKey?: string, onComplete?: Function, onSkip?: Function, startIndex?: number }} opts
+   * @param {{ force?: boolean, storageKey?: string, onComplete?: Function, onSkip?: Function, startIndex?: number, demoMode?: boolean }} opts
    */
   async start(steps, opts = {}) {
     const {
@@ -105,9 +110,10 @@ export class GuidedTour {
       onComplete = null,
       onSkip = null,
       startIndex = 0,
+      demoMode = false,
     } = opts;
 
-    if (!steps?.length) return false;
+    if (!steps?.length && !demoMode) return false;
     if (!force && storageKey && !this.shouldAutoStart(storageKey)) return false;
 
     if (activeTour && activeTour !== this && activeTour.active) {
@@ -115,25 +121,80 @@ export class GuidedTour {
     }
     if (this.active) this.skip({ silent: true });
 
-    this.steps = steps;
+    this.steps = steps || [];
     this.storageKey = storageKey;
     this._onComplete = onComplete;
     this._onSkip = onSkip;
-    this.stepIndex = Math.max(0, Math.min(startIndex, steps.length - 1));
+    this.demoMode = demoMode;
+    this.stepIndex = Math.max(0, Math.min(startIndex, Math.max(0, this.steps.length - 1)));
     this._wasSidebarOpen = document.body.classList.contains('mobile-sidebar-open');
     this.active = true;
     activeTour = this;
+    this._cardPos = null;
 
     this.root.hidden = false;
     document.body.classList.add('tour-active');
+    document.body.classList.toggle('tour-demo-playing', demoMode);
+    this.blocker.hidden = !demoMode;
+    this.prevBtn.hidden = demoMode;
+    this.nextBtn.hidden = demoMode;
+    this.stepEl.hidden = demoMode;
     this._bindGlobal();
-    await this._showStep(this.stepIndex);
-    this.nextBtn?.focus?.({ preventScroll: true });
+
+    if (!demoMode && this.steps.length) {
+      await this._showStep(this.stepIndex);
+      this.nextBtn?.focus?.({ preventScroll: true });
+    }
     return true;
   }
 
-  async next() {
+  /** Update narration while demo plays — card/spotlight move smoothly. */
+  async narrate({
+    title = '',
+    text = '',
+    textMobile = '',
+    target = null,
+    pad,
+    radius,
+    aboveFooter = false,
+    scrollBlock = 'nearest',
+    stepLabel = '',
+  } = {}) {
     if (!this.active) return;
+    const mobile = isMobileLayout();
+    const body = mobile && textMobile ? textMobile : text;
+
+    this.card.classList.add('is-updating');
+    await waitFrames(prefersReducedMotion() ? 0 : 90);
+    this.titleEl.textContent = title;
+    this.textEl.textContent = body;
+    if (stepLabel) {
+      this.stepEl.hidden = false;
+      this.stepEl.textContent = stepLabel;
+    }
+    this.card.classList.remove('is-updating');
+
+    this.card.classList.toggle('tour-card--sheet', mobile);
+    this.card.classList.toggle('tour-card--above-footer', Boolean(aboveFooter && mobile));
+
+    const el = resolveTarget(target);
+    if (el?.scrollIntoView) {
+      try {
+        el.scrollIntoView({
+          behavior: prefersReducedMotion() ? 'auto' : 'smooth',
+          block: scrollBlock,
+          inline: 'nearest',
+        });
+        await waitFrames(prefersReducedMotion() ? 40 : 240);
+      } catch { /* ignore */ }
+    }
+
+    this._position(el, { pad, radius, aboveFooter });
+    await waitFrames(prefersReducedMotion() ? 40 : CARD_MOVE_MS);
+  }
+
+  async next() {
+    if (!this.active || this.demoMode) return;
     if (this.stepIndex >= this.steps.length - 1) {
       this.complete();
       return;
@@ -143,7 +204,7 @@ export class GuidedTour {
   }
 
   async prev() {
-    if (!this.active || this.stepIndex <= 0) return;
+    if (!this.active || this.demoMode || this.stepIndex <= 0) return;
     this.stepIndex -= 1;
     await this._showStep(this.stepIndex);
   }
@@ -175,7 +236,8 @@ export class GuidedTour {
       root.className = 'tour-root';
       root.hidden = true;
       root.innerHTML = `
-        <div class="tour-spotlight" aria-hidden="true"></div>
+        <div class="tour-blocker" hidden aria-hidden="true"></div>
+        <div class="tour-spotlight is-hidden" aria-hidden="true"></div>
         <div class="tour-card" role="dialog" aria-modal="true" aria-labelledby="tourTitle">
           <div class="tour-card__body">
             <h3 class="tour-title" id="tourTitle" aria-live="polite"></h3>
@@ -190,9 +252,16 @@ export class GuidedTour {
         </div>
       `;
       document.body.appendChild(root);
+    } else if (!root.querySelector('.tour-blocker')) {
+      const blocker = document.createElement('div');
+      blocker.className = 'tour-blocker';
+      blocker.hidden = true;
+      blocker.setAttribute('aria-hidden', 'true');
+      root.insertBefore(blocker, root.firstChild);
     }
 
     this.root = root;
+    this.blocker = root.querySelector('.tour-blocker');
     this.spotlight = root.querySelector('.tour-spotlight');
     this.card = root.querySelector('.tour-card');
     this.titleEl = root.querySelector('.tour-title');
@@ -226,11 +295,11 @@ export class GuidedTour {
     if (e.key === 'Escape') {
       e.preventDefault();
       this.skip();
-    } else if (e.key === 'ArrowRight' || e.key === 'Enter') {
+    } else if (!this.demoMode && (e.key === 'ArrowRight' || e.key === 'Enter')) {
       if (e.target === this.prevBtn) return;
       e.preventDefault();
       this.next();
-    } else if (e.key === 'ArrowLeft') {
+    } else if (!this.demoMode && e.key === 'ArrowLeft') {
       e.preventDefault();
       this.prev();
     }
@@ -250,38 +319,29 @@ export class GuidedTour {
       await waitFrames();
     }
 
-    const mobile = isMobileLayout();
-    const title = step.title || '';
-    const text = mobile && step.textMobile ? step.textMobile : (step.text || '');
+    await this.narrate({
+      title: step.title || '',
+      text: step.text || '',
+      textMobile: step.textMobile || '',
+      target: step.target,
+      pad: step.pad,
+      radius: step.radius,
+      aboveFooter: step.aboveFooter,
+      scrollBlock: step.scrollBlock || 'nearest',
+      stepLabel: `${index + 1} / ${this.steps.length}`,
+    });
 
-    this.titleEl.textContent = title;
-    this.textEl.textContent = text;
-    this.stepEl.textContent = `${index + 1} / ${this.steps.length}`;
     this.prevBtn.disabled = index === 0;
     this.nextBtn.textContent = index >= this.steps.length - 1 ? 'Понятно' : 'Далее';
     this.nextBtn.setAttribute('aria-label', this.nextBtn.textContent);
-
-    this.card.classList.toggle('tour-card--sheet', mobile);
-    this.card.classList.toggle('tour-card--above-footer', Boolean(step.aboveFooter && mobile));
-
-    const target = resolveTarget(step.target);
-    if (target && typeof target.scrollIntoView === 'function') {
-      try {
-        target.scrollIntoView({
-          behavior: prefersReducedMotion() ? 'auto' : 'smooth',
-          block: step.scrollBlock || 'nearest',
-          inline: 'nearest',
-        });
-        await waitFrames(prefersReducedMotion() ? 40 : 220);
-      } catch { /* ignore */ }
-    }
-
-    this._position(target, step);
+    this.prevBtn.hidden = false;
+    this.nextBtn.hidden = false;
+    this.stepEl.hidden = false;
   }
 
   _position(target = null, step = null) {
     if (!this.active) return;
-    step = step || this.getCurrentStep();
+    step = step || this.getCurrentStep() || {};
     if (!target) target = resolveTarget(step?.target);
 
     const mobile = isMobileLayout();
@@ -290,13 +350,8 @@ export class GuidedTour {
 
     if (!target || !target.getBoundingClientRect) {
       this.spotlight.classList.add('is-hidden');
-      this.spotlight.style.cssText = '';
       if (!mobile) {
-        this.card.style.left = '50%';
-        this.card.style.top = '50%';
-        this.card.style.right = 'auto';
-        this.card.style.bottom = 'auto';
-        this.card.style.transform = 'translate(-50%, -50%)';
+        this._setCardPos(window.innerWidth / 2 - 180, window.innerHeight * 0.18);
       } else {
         this.card.style.left = '';
         this.card.style.top = '';
@@ -336,15 +391,13 @@ export class GuidedTour {
 
   _placeDesktopCard(rect, pad) {
     const card = this.card;
-    card.style.transform = 'none';
-    const gap = 14;
+    const gap = 16;
     const vw = window.innerWidth;
     const vh = window.innerHeight;
     const cardW = Math.min(360, vw - 32);
     card.style.width = `${cardW}px`;
 
-    // Measure after width set
-    const ch = card.offsetHeight || 180;
+    const ch = card.offsetHeight || 160;
     const spaceBelow = vh - (rect.bottom + pad);
     const spaceAbove = rect.top - pad;
 
@@ -357,7 +410,6 @@ export class GuidedTour {
       top = Math.max(16, rect.top - pad - gap - ch);
     }
 
-    // If still overlapping heavily, park to the right/left
     const overlaps =
       top < rect.bottom + pad &&
       top + ch > rect.top - pad &&
@@ -371,13 +423,33 @@ export class GuidedTour {
       } else if (rect.left - gap - 16 >= cardW) {
         left = rect.left - gap - cardW;
         top = Math.min(Math.max(16, rect.top), vh - ch - 16);
+      } else {
+        // Prefer bottom dock so card doesn't jump over content
+        top = Math.min(vh - ch - 20, Math.max(16, rect.bottom + gap));
       }
     }
 
-    card.style.left = `${left}px`;
-    card.style.top = `${top}px`;
+    this._setCardPos(left, top);
+  }
+
+  _setCardPos(left, top) {
+    const card = this.card;
     card.style.right = 'auto';
     card.style.bottom = 'auto';
+    card.style.transform = 'none';
+
+    // First placement: set without transition jump from 0,0
+    if (!this._cardPos) {
+      card.classList.add('tour-card--no-motion');
+      card.style.left = `${left}px`;
+      card.style.top = `${top}px`;
+      void card.offsetWidth;
+      card.classList.remove('tour-card--no-motion');
+    } else {
+      card.style.left = `${left}px`;
+      card.style.top = `${top}px`;
+    }
+    this._cardPos = { left, top };
   }
 
   _restoreSidebar() {
@@ -393,12 +465,15 @@ export class GuidedTour {
     this.active = false;
     if (activeTour === this) activeTour = null;
     this.root.hidden = true;
-    document.body.classList.remove('tour-active');
+    document.body.classList.remove('tour-active', 'tour-demo-playing');
     this.spotlight.classList.add('is-hidden');
+    if (this.blocker) this.blocker.hidden = true;
     this._unbindGlobal();
     this._restoreSidebar();
     this.steps = [];
     this.stepIndex = 0;
+    this.demoMode = false;
+    this._cardPos = null;
   }
 }
 
