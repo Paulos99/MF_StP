@@ -11,6 +11,8 @@ import { getCeilingFrameBounds } from '../visualizers/frame-overlay.js';
 import { SketchEditor } from '../editor/sketch-editor.js';
 import { validateRoomForm } from '../editor/opening-tool.js';
 import { buildShareUrl, readShareFromUrl, buildProjectPayload } from '../export/share-link.js';
+import { setupAppOnboarding, dismissAppTourIfActive } from './app-onboarding.js';
+import { GuidedTour } from './guided-tour.js';
 
 const AUTO_RECALC_MS = 400;
 const MOBILE_MQ = '(max-width: 899px)';
@@ -659,6 +661,10 @@ function setInputMode(mode, { confirmSwitch = false, preserveGeometry = false } 
   const prev = state.inputMode;
   state.inputMode = next || null;
 
+  if (prev !== next) {
+    dismissAppTourIfActive();
+  }
+
   if (!next) {
     clearResultsUi('Выберите способ слева');
     syncModePanelsUi();
@@ -722,6 +728,20 @@ function setInputMode(mode, { confirmSwitch = false, preserveGeometry = false } 
   }
 
   if (prev !== next) scheduleAutoRecalc();
+
+  if (next === 'draw' && prev !== 'draw') {
+    maybeStartSketchTour();
+  }
+}
+
+function maybeStartSketchTour() {
+  const onboarding = sketchEditor?.onboarding;
+  if (!onboarding?.shouldAutoStart?.()) return;
+  setTimeout(() => {
+    if (state.inputMode !== 'draw') return;
+    if (GuidedTour.getShared().isActive()) return;
+    onboarding.start(false);
+  }, 380);
 }
 
 function setupModeToggles() {
@@ -1615,6 +1635,11 @@ function init() {
   updateResultsPreview();
   loadFromUrl();
   if (!state.inputMode) updateSchemeModeUi();
+
+  const appOnboarding = setupAppOnboarding();
+  if (!state.inputMode) {
+    appOnboarding.maybeAutoStart();
+  }
 }
 
 document.addEventListener('DOMContentLoaded', init);

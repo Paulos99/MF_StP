@@ -1,153 +1,146 @@
-import { TutorialDemoPlayer } from './tutorial-demo.js';
+import {
+  GuidedTour,
+  openMobileSidebar,
+  closeMobileSidebar,
+  tourIsMobileLayout,
+} from '../ui/guided-tour.js';
+
+export const SKETCH_TUTORIAL_KEY = 'mf-sketch-tutorial-v1';
 
 export const SKETCH_TUTORIAL_STEPS = [
   {
     id: 'contour',
+    target: '#sketchCanvas',
     title: 'Создайте контур',
-    subtitle: 'вид сверху',
-    text: 'Кликайте по сетке с шагом 1 м. Линии выравниваются по горизонтали и вертикали. Для замыкания нажмите красную точку старта.',
-    demo: 'draw',
+    text: 'Кликайте по сетке с шагом 1 м. Линии выравниваются по осям. Замкните контур красной точкой старта.',
+    textMobile: 'Короткий тап по сетке — точка. Свайп по пустому месту — сдвиг схемы. Замкните контур красной точкой старта.',
+    beforeStep: async () => {
+      if (tourIsMobileLayout()) closeMobileSidebar();
+    },
   },
   {
     id: 'dimensions',
-    title: 'Задайте размеры',
-    text: 'Кликните по стороне — рядом с размером появятся кнопки «Изменить размер» и «Проёмы».',
-    demo: 'dimension',
+    target: '#sketchCanvas',
+    title: 'Размеры сторон',
+    text: 'Кликните по стороне — появятся кнопки «Изменить размер» и «Проёмы».',
+    textMobile: 'Тапните по стороне — появятся крупные кнопки размера и проёмов.',
+    beforeStep: async () => {
+      if (tourIsMobileLayout()) closeMobileSidebar();
+    },
   },
   {
     id: 'edit',
-    title: 'Измените форму',
-    text: 'Перетащите угол по сетке, чтобы скорректировать форму.',
-    demo: 'drag',
-  },
-  {
-    id: 'delete',
-    title: 'Удалите угол',
-    text: 'Удерживайте угол ~1 сек — появится круг прогресса, затем подтвердите удаление.',
-    demo: 'delete',
+    target: '#sketchCanvas',
+    title: 'Форма и углы',
+    text: 'Перетащите угол по сетке. Удерживайте угол ~0,5 с, чтобы удалить его.',
+    textMobile: 'Перетащите угол. Удерживайте ~0,5 с — удаление угла.',
+    beforeStep: async () => {
+      if (tourIsMobileLayout()) closeMobileSidebar();
+    },
   },
   {
     id: 'navigation',
-    title: 'Масштаб и перемещение',
-    text: 'Колёсико мыши — приближение и отдаление. Зажмите колёсико и перетаскивайте схему. Или удерживайте пробел и перетаскивайте левой кнопкой.',
-    demo: 'navigation',
+    target: '.sketch-float-zoom',
+    title: 'Масштаб и фото',
+    text: 'Колёсико — зум. Пробел + перетаскивание или средняя кнопка — панорама. Камера загружает фото плана.',
+    textMobile: 'Pinch — зум, один палец — сдвиг. Кнопки ± и камера тоже в углу схемы.',
+    beforeStep: async () => {
+      if (tourIsMobileLayout()) closeMobileSidebar();
+    },
+    radius: 16,
   },
   {
-    id: 'photo',
-    title: 'Фото схемы',
-    text: 'Нажмите значок камеры рядом с зумом (+/−), чтобы загрузить фото плана как подложку.',
-    demo: 'photo',
-  },
-  {
-    id: 'openings',
-    title: 'Проёмы',
-    text: 'Выберите стену и нажмите «Проёмы» — откроется настройка дверей и окон. Или «Настроить стены» в верхней панели.',
-    demo: 'sketch-openings',
-  },
-  {
-    id: 'done',
-    title: 'Готово',
-    text: 'Нажмите «Готово» — схема и проёмы сохранятся в калькуляторе.',
-    demo: 'done',
+    id: 'height',
+    target: '#drawHeight',
+    title: 'Высота и проёмы',
+    text: 'Укажите высоту стен. После контура проёмы — через сторону стены или «Настроить стены».',
+    textMobile: 'Высота стен — в параметрах. Проёмы: тап по стороне или «Настроить стены».',
+    beforeStep: async () => {
+      if (tourIsMobileLayout()) openMobileSidebar();
+    },
+    scrollBlock: 'center',
   },
 ];
 
+/**
+ * Spotlight sketch tour — compatible API for SketchEditor.
+ */
 export class SketchOnboarding {
-  constructor(overlayEl, { onStepChange, onComplete, onSkip } = {}) {
-    this.overlay = overlayEl;
+  constructor(_overlayEl, { onStepChange, onComplete, onSkip } = {}) {
     this.onStepChange = onStepChange;
     this.onComplete = onComplete;
     this.onSkip = onSkip;
-    this.step = 0;
     this.active = false;
-    this._demoPlayer = null;
-    this._bind();
+    this.step = 0;
+    this._tour = GuidedTour.getShared();
+    if (_overlayEl) _overlayEl.hidden = true;
   }
 
-  _bind() {
-    this.overlay.querySelector('.tutorial-prev')?.addEventListener('click', () => this.prev());
-    this.overlay.querySelector('.tutorial-next')?.addEventListener('click', () => this.next());
-    this.overlay.querySelector('.tutorial-skip')?.addEventListener('click', () => this.dismiss());
-  }
-
-  _ensureDemoPlayer() {
-    const demoEl = this.overlay.querySelector('.tutorial-demo');
-    if (!demoEl) return null;
-    if (!this._demoPlayer) {
-      this._demoPlayer = new TutorialDemoPlayer(demoEl);
-    }
-    return this._demoPlayer;
+  shouldAutoStart() {
+    return this._tour.shouldAutoStart(SKETCH_TUTORIAL_KEY);
   }
 
   start(force = false) {
-    if (!force) return;
-    this.step = 0;
-    this.active = true;
-    this.overlay.hidden = false;
-    this._render();
-    this.onStepChange?.(this.getCurrentStep());
+    if (!force && !this.shouldAutoStart()) return;
+    this._run(0, force);
   }
 
   startOpenings(force = false) {
-    if (!force) return;
-    this.step = SKETCH_TUTORIAL_STEPS.findIndex((s) => s.id === 'openings');
-    if (this.step < 0) this.step = 6;
+    if (!force && !this.shouldAutoStart()) return;
+    const idx = SKETCH_TUTORIAL_STEPS.findIndex((s) => s.id === 'height');
+    this._run(idx >= 0 ? idx : SKETCH_TUTORIAL_STEPS.length - 1, force);
+  }
+
+  async _run(startIndex, force) {
     this.active = true;
-    this.overlay.hidden = false;
-    this._render();
-    this.onStepChange?.(this.getCurrentStep());
+    const steps = SKETCH_TUTORIAL_STEPS.map((s) => ({
+      ...s,
+      beforeStep: async (step, ctx) => {
+        await s.beforeStep?.(step, ctx);
+        this.step = SKETCH_TUTORIAL_STEPS.indexOf(s);
+        this.onStepChange?.(s);
+      },
+    }));
+
+    await this._tour.start(steps, {
+      force,
+      storageKey: SKETCH_TUTORIAL_KEY,
+      startIndex,
+      onComplete: () => {
+        this.active = false;
+        this.onComplete?.();
+      },
+      onSkip: () => {
+        this.active = false;
+        this.onSkip?.();
+      },
+    });
   }
 
   dismiss() {
+    if (this._tour.isActive() && this._tour.storageKey === SKETCH_TUTORIAL_KEY) {
+      this._tour.skip();
+    }
     this.active = false;
-    this.overlay.hidden = true;
-    this._demoPlayer?.stop();
-    this.onSkip?.();
   }
 
   complete() {
-    this.dismiss();
-    this.onComplete?.();
+    if (this._tour.isActive() && this._tour.storageKey === SKETCH_TUTORIAL_KEY) {
+      this._tour.complete();
+    }
+    this.active = false;
   }
 
   prev() {
-    if (this.step > 0) {
-      this.step--;
-      this._render();
-      this.onStepChange?.(this.getCurrentStep());
-    }
+    this._tour.prev();
   }
 
   next() {
-    if (this.step < SKETCH_TUTORIAL_STEPS.length - 1) {
-      this.step++;
-      this._render();
-      this.onStepChange?.(this.getCurrentStep());
-    } else {
-      this.complete();
-    }
+    this._tour.next();
   }
 
   getCurrentStep() {
-    return SKETCH_TUTORIAL_STEPS[this.step];
-  }
-
-  _render() {
-    const s = SKETCH_TUTORIAL_STEPS[this.step];
-    this.overlay.querySelector('.tutorial-title').textContent = s.title;
-    const sub = this.overlay.querySelector('.tutorial-subtitle');
-    sub.textContent = s.subtitle ?? '';
-    sub.hidden = !s.subtitle;
-    this.overlay.querySelector('.tutorial-text').textContent = s.text;
-    this.overlay.querySelector('.tutorial-step-indicator').textContent =
-      `${this.step + 1} / ${SKETCH_TUTORIAL_STEPS.length}`;
-    this.overlay.querySelector('.tutorial-prev').disabled = this.step === 0;
-    const nextBtn = this.overlay.querySelector('.tutorial-next');
-    nextBtn.textContent = this.step === SKETCH_TUTORIAL_STEPS.length - 1 ? 'Понятно' : 'Далее';
-    nextBtn.setAttribute('aria-label', nextBtn.textContent);
-
-    const player = this._ensureDemoPlayer();
-    player?.start(s.demo);
+    return SKETCH_TUTORIAL_STEPS[this.step] || this._tour.getCurrentStep();
   }
 }
 
@@ -157,32 +150,20 @@ export const WALL_TUTORIAL_STEPS = [
   {
     title: 'Выберите стену',
     text: 'Кликните по стене на плане или выберите чип — откроется развёртка.',
-    demo: 'wall-select',
   },
   {
     title: 'Добавьте проём',
     text: 'Нажмите «+ Дверь» или «+ Окно», затем перетащите проём в нужное место.',
-    demo: 'wall-opening',
   },
   {
     title: 'Уточните размеры',
     text: 'Кликните по проёму и задайте точные размеры в панели свойств.',
-    demo: 'wall-form',
   },
 ];
 
 export class WallOnboarding {
-  constructor(overlayEl) {
-    this.overlay = overlayEl;
+  constructor() {
     this.step = 0;
-    this._demoPlayer = null;
-    this._bind();
-  }
-
-  _bind() {
-    this.overlay.querySelector('.tutorial-prev')?.addEventListener('click', () => this.prev());
-    this.overlay.querySelector('.tutorial-next')?.addEventListener('click', () => this.next());
-    this.overlay.querySelector('.tutorial-skip')?.addEventListener('click', () => this.skip());
   }
 
   shouldAutoStart() {
@@ -193,59 +174,12 @@ export class WallOnboarding {
     }
   }
 
-  start(force = false) {
-    if (!force && !this.shouldAutoStart()) return;
-    this.step = 0;
-    this.overlay.hidden = false;
-    this._render();
-  }
-
+  start() { /* unused */ }
   skip() {
-    this.overlay.hidden = true;
-    this._demoPlayer?.stop();
     try {
       localStorage.setItem(WALL_TUTORIAL_KEY, 'done');
     } catch { /* ignore */ }
   }
-
-  prev() {
-    if (this.step > 0) {
-      this.step--;
-      this._render();
-    }
-  }
-
-  next() {
-    if (this.step < WALL_TUTORIAL_STEPS.length - 1) {
-      this.step++;
-      this._render();
-    } else {
-      this.skip();
-    }
-  }
-
-  _render() {
-    const s = WALL_TUTORIAL_STEPS[this.step];
-    this.overlay.querySelector('.tutorial-title').textContent = s.title;
-    const sub = this.overlay.querySelector('.tutorial-subtitle');
-    if (sub) sub.hidden = true;
-    this.overlay.querySelector('.tutorial-text').textContent = s.text;
-    this.overlay.querySelector('.tutorial-step-indicator').textContent =
-      `${this.step + 1} / ${WALL_TUTORIAL_STEPS.length}`;
-    this.overlay.querySelector('.tutorial-prev').disabled = this.step === 0;
-    const nextBtn = this.overlay.querySelector('.tutorial-next');
-    nextBtn.textContent = this.step === WALL_TUTORIAL_STEPS.length - 1 ? 'Понятно' : 'Далее';
-
-    let demoEl = this.overlay.querySelector('.tutorial-demo');
-    if (!demoEl) {
-      demoEl = document.createElement('div');
-      demoEl.className = 'tutorial-demo';
-      this.overlay.querySelector('.tutorial-text')?.after(demoEl);
-    }
-
-    if (!this._demoPlayer) {
-      this._demoPlayer = new TutorialDemoPlayer(demoEl);
-    }
-    this._demoPlayer.start(s.demo);
-  }
+  prev() {}
+  next() {}
 }

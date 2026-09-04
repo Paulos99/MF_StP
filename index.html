@@ -220,11 +220,11 @@
                 <h2 id="schemeTitle">Схема монтажа</h2>
                 <span id="schemeStatus" class="scheme-status" hidden></span>
               </div>
+              <div class="results-tabs results-tabs--underline" id="resultsTabs" role="tablist" aria-label="Вид схемы">
+                <button type="button" class="tab-btn active" data-tab="plan" role="tab" aria-selected="true">Потолок</button>
+                <button type="button" class="tab-btn" data-tab="walls" role="tab" aria-selected="false" hidden>Стены</button>
+              </div>
               <div class="scheme-header__right">
-                <div class="results-tabs results-tabs--underline" id="resultsTabs" role="tablist" aria-label="Вид схемы">
-                  <button type="button" class="tab-btn active" data-tab="plan" role="tab" aria-selected="true">Потолок</button>
-                  <button type="button" class="tab-btn" data-tab="walls" role="tab" aria-selected="false" hidden>Стены</button>
-                </div>
                 <div class="plan-overlay-toggles" id="planOverlayToggles">
                   <label class="canvas-checkbox"><input type="checkbox" id="showNumbers" checked /> № панелей</label>
                   <label class="canvas-checkbox" id="showFrameLabel"><input type="checkbox" id="showFrame" /> Показать каркас на схеме</label>
@@ -500,6 +500,22 @@
 
   <!-- Hidden sync field -->
   <input type="hidden" id="wallHeight" value="2.7" />
+
+  <div id="guidedTourRoot" class="tour-root" hidden>
+    <div class="tour-spotlight is-hidden" aria-hidden="true"></div>
+    <div class="tour-card" role="dialog" aria-modal="true" aria-labelledby="tourTitle">
+      <div class="tour-card__body">
+        <h3 class="tour-title" id="tourTitle" aria-live="polite"></h3>
+        <p class="tour-text" id="tourText"></p>
+      </div>
+      <div class="tour-nav">
+        <button type="button" class="tour-btn tour-btn--ghost tour-prev" aria-label="Назад">Назад</button>
+        <span class="tour-step" id="tourStep"></span>
+        <button type="button" class="tour-btn tour-btn--primary tour-next" aria-label="Далее">Далее</button>
+      </div>
+      <button type="button" class="tour-skip">Пропустить</button>
+    </div>
+  </div>
 
   <script type="module" src="./src/ui/app.js"></script>
 </body>

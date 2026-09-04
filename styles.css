@@ -4480,11 +4480,11 @@ body {
 .scheme-card .scheme-header {
     margin-bottom: 8px;
     flex-shrink: 0;
-    display: flex;
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
     align-items: center;
-    justify-content: space-between;
     gap: 10px;
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
 }
 
 .workspace-stats {
@@ -5374,6 +5374,7 @@ body.theme-dark .results-preview__fade {
     flex-direction: column;
     gap: 2px;
     min-width: 0;
+    justify-self: start;
 }
 
 .scheme-header__titles h2 {
@@ -5381,12 +5382,20 @@ body.theme-dark .results-preview__fade {
     font-size: 1rem;
 }
 
+.scheme-header > .results-tabs {
+    justify-self: center;
+    grid-column: 2;
+}
+
 .scheme-header__right {
     display: flex;
     align-items: center;
+    justify-content: flex-end;
     gap: 10px;
     flex-wrap: nowrap;
     flex-shrink: 0;
+    justify-self: end;
+    min-width: 0;
 }
 
 .scheme-status {
@@ -5877,13 +5886,16 @@ body.theme-dark .results-preview__fade {
 .scheme-header__right {
     display: flex;
     align-items: center;
+    justify-content: flex-end;
     gap: 8px;
     flex-wrap: nowrap;
     flex-shrink: 0;
+    justify-self: end;
 }
 
 .results-tabs--underline {
     flex-shrink: 0;
+    justify-self: center;
 }
 
 .results-tabs--underline .tab-btn[hidden] {
