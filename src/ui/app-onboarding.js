@@ -19,9 +19,9 @@ const DEMO_ROOM = [
   { x: 0, y: 4 },
 ];
 
-const CURSOR_MS = 1450;
+const CURSOR_MS = 1115; // ~30% faster than 1450
 const BEAT = 900;
-/** Faster cursor while tracing the room contour (≈1.5×). */
+/** Faster cursor while tracing the room contour (≈1.5× vs base). */
 const DRAW_CURSOR_MS = Math.round(CURSOR_MS / 1.5);
 
 let appTourApi = null;

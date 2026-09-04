@@ -68,7 +68,7 @@ export class VirtualCursor {
     }
   }
 
-  async moveTo(target, { duration = 1400 } = {}) {
+  async moveTo(target, { duration = 1115 } = {}) {
     this.show();
     const point = target instanceof Element ? centerOf(target) : target;
     if (!point || Number.isNaN(point.x)) return;
@@ -85,8 +85,8 @@ export class VirtualCursor {
     const fromX = this.x;
     const fromY = this.y;
     const dist = Math.hypot(point.x - fromX, point.y - fromY);
-    // Prefer requested duration so demos stay readable; scale up a bit for long paths.
-    const ms = Math.max(duration, 720 + dist * 1.15);
+    // Prefer requested duration; long paths scale gently (≈30% faster baseline).
+    const ms = Math.max(duration, Math.round(500 + dist * 0.88));
 
     await new Promise((resolve) => {
       const start = performance.now();
