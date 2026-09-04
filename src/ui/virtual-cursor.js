@@ -68,7 +68,7 @@ export class VirtualCursor {
     }
   }
 
-  async moveTo(target, { duration = 1400 } = {}) {
+  async moveTo(target, { duration = 980 } = {}) {
     this.show();
     const point = target instanceof Element ? centerOf(target) : target;
     if (!point || Number.isNaN(point.x)) return;
@@ -85,8 +85,7 @@ export class VirtualCursor {
     const fromX = this.x;
     const fromY = this.y;
     const dist = Math.hypot(point.x - fromX, point.y - fromY);
-    // Slower, distance-aware easing
-    const ms = Math.max(700, Math.min(duration, 550 + dist * 1.15));
+    const ms = Math.max(420, Math.min(duration, 360 + dist * 0.9));
 
     await new Promise((resolve) => {
       const start = performance.now();
