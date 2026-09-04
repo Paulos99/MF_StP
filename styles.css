@@ -5720,3 +5720,204 @@ body.mobile-sidebar-open .workspace-sidebar {
         display: inline-block;
     }
 }
+
+/* ===== UX trial: entry path + discoverability ===== */
+.entry-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 4px 0 16px;
+}
+
+.entry-picker__title {
+  margin: 0;
+  font-size: 1.15rem;
+  font-weight: 750;
+  color: var(--text, #1a2b24);
+}
+
+.entry-picker__lead {
+  margin: 0 0 6px;
+  font-size: 0.88rem;
+  color: var(--muted, #5f6b73);
+  line-height: 1.4;
+}
+
+.entry-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  width: 100%;
+  text-align: left;
+  padding: 14px 16px;
+  border: 1.5px solid rgba(1, 100, 79, 0.22);
+  border-radius: 12px;
+  background: #fff;
+  cursor: pointer;
+  transition: border-color 0.15s, box-shadow 0.15s, transform 0.15s;
+}
+
+.entry-card:hover {
+  border-color: #01644f;
+  box-shadow: 0 4px 14px rgba(1, 100, 79, 0.12);
+  transform: translateY(-1px);
+}
+
+.entry-card--secondary {
+  border-style: dashed;
+  background: rgba(1, 100, 79, 0.03);
+}
+
+.entry-card__title {
+  font-weight: 700;
+  font-size: 0.98rem;
+  color: #01644f;
+}
+
+.entry-card__desc {
+  font-size: 0.82rem;
+  color: #5f6b73;
+  line-height: 1.35;
+}
+
+body.theme-dark .entry-card {
+  background: #1c2421;
+  border-color: rgba(255, 255, 255, 0.12);
+}
+
+body.theme-dark .entry-card__title {
+  color: #7dceb8;
+}
+
+.active-mode-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  margin-bottom: 10px;
+  border-radius: 10px;
+  background: rgba(1, 100, 79, 0.08);
+}
+
+.active-mode-bar__label {
+  display: block;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #5f6b73;
+}
+
+.calc-panel-title {
+  margin: 0 0 8px;
+  font-size: 1rem;
+  font-weight: 700;
+}
+
+.shared-calc-options .calc-panel-title {
+  margin-top: 14px;
+}
+
+.draw-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  margin-top: 10px;
+}
+
+.refine-cta {
+  margin-top: 16px;
+  padding: 12px;
+  border-radius: 10px;
+  background: rgba(196, 120, 20, 0.1);
+  border: 1px solid rgba(196, 120, 20, 0.28);
+}
+
+.refine-cta p {
+  margin: 0 0 8px;
+  font-size: 0.85rem;
+  color: #6a4a12;
+}
+
+.calc-ready-banner {
+  margin: 12px 0;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: rgba(1, 100, 79, 0.1);
+  border: 1px solid rgba(1, 100, 79, 0.28);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.calc-ready-banner__delta {
+  font-size: 0.88rem;
+  color: #01644f;
+  font-weight: 600;
+}
+
+.calc-ready-banner__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.theme-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.theme-toggle__label {
+  font-size: 0.75rem;
+  color: #5f6b73;
+  font-weight: 600;
+}
+
+.canvas-checkbox.is-highlighted {
+  outline: 2px solid #01644f;
+  outline-offset: 2px;
+  border-radius: 6px;
+  animation: frame-hint-pulse 0.8s ease 2;
+}
+
+@keyframes frame-hint-pulse {
+  0%, 100% { background: transparent; }
+  50% { background: rgba(1, 100, 79, 0.15); }
+}
+
+.sketch-bg-panel__hint {
+  margin: 0 0 8px;
+  font-size: 0.78rem;
+  line-height: 1.35;
+  color: #5f6b73;
+}
+
+
+
+#dimsCalcCard.input-panel,
+#drawCalcCard.input-panel,
+#quickCalcCard.input-panel,
+#sharedCalcOptions.input-panel {
+  max-height: none !important;
+  overflow: visible !important;
+  display: block;
+  margin-bottom: 12px;
+}
+
+#dimsCalcCard[hidden],
+#drawCalcCard[hidden],
+#quickCalcCard[hidden],
+#sharedCalcOptions[hidden],
+#entryPicker[hidden],
+#activeModeBar[hidden],
+#calcReadyBanner[hidden] {
+  display: none !important;
+}
+
+.btn-sm {
+  padding: 8px 12px;
+  font-size: 0.88rem;
+}

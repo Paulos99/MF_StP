@@ -1,4 +1,4 @@
-export const SHARE_VERSION = 3;
+export const SHARE_VERSION = 4;
 
 export function encodeProjectState(state) {
   try {
@@ -18,13 +18,20 @@ export function decodeProjectState(hash) {
   }
 }
 
+/** Старые ссылки: scheme → dims */
+export function normalizeInputMode(mode) {
+  if (mode === 'scheme') return 'dims';
+  if (mode === 'dims' || mode === 'draw' || mode === 'area') return mode;
+  return null;
+}
+
 export function buildProjectPayload({ room, options, step, inputMode, areaValue, areaWalls }) {
   return {
     v: SHARE_VERSION,
     room,
     options,
     step: step ?? 1,
-    inputMode: inputMode ?? 'scheme',
+    inputMode: normalizeInputMode(inputMode) ?? 'dims',
     areaValue: areaValue ?? null,
     areaWalls: areaWalls ?? [],
   };
@@ -41,5 +48,7 @@ export function buildShareUrl(state) {
 export function readShareFromUrl() {
   const hash = window.location.hash.replace(/^#/, '');
   if (!hash.startsWith('calc=')) return null;
-  return decodeProjectState(hash.slice(5));
+  const data = decodeProjectState(hash.slice(5));
+  if (data) data.inputMode = normalizeInputMode(data.inputMode);
+  return data;
 }

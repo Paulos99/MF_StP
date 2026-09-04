@@ -73,9 +73,21 @@ function isMobileLayout() {
 
 function getNoModeHint() {
   return isMobileLayout()
-    ? 'Нажмите «Ввести параметры расчёта» внизу экрана'
-    : 'Выберите тип расчёта в панели слева';
+    ? 'Нажмите «Ввести параметры расчёта» внизу и выберите способ'
+    : 'Выберите способ слева: размеры, схема или площадь';
 }
+
+function isSketchMode(mode = state.inputMode) {
+  return mode === 'dims' || mode === 'draw';
+}
+
+const MODE_LABELS = {
+  dims: 'Ввести размеры',
+  draw: 'Нарисовать схему',
+  area: 'По площади',
+};
+
+let lastPanelsSnapshot = null;
 
 function syncMobileParamsBtn() {
   const btn = $('mobileParamsBtn');
@@ -228,9 +240,13 @@ function syncCalcButtons() {
 }
 
 function updatePlanStats() {
-  const el = $('planStats');
-  if (!el || !state.room.vertices?.length) return;
-  el.textContent = `Площадь: ${state.room.getTotalArea().toFixed(2)} м² · Периметр: ${state.room.getPerimeter().toFixed(2)} м`;
+  const text = state.room.vertices?.length
+    ? `Площадь: ${state.room.getTotalArea().toFixed(2)} м² · Периметр: ${state.room.getPerimeter().toFixed(2)} м`
+    : 'Площадь: — · Периметр: —';
+  ['planStats', 'planStatsDims', 'planStatsDraw'].forEach((id) => {
+    const el = $(id);
+    if (el) el.textContent = text;
+  });
 }
 
 function updateLayoutMode() {
@@ -265,7 +281,7 @@ function updateSchemeModeUi() {
   const areaPh = $('schemeAreaPlaceholder');
   const host = $('sketchEditorHost');
   const noMode = !state.inputMode;
-  const schemeTooBig = state.inputMode === 'scheme' && state.forceAreaBySize;
+  const schemeTooBig = state.inputMode === 'dims' && state.forceAreaBySize;
   const hideScheme = noMode || state.inputMode === 'area' || schemeTooBig;
   const showAreaPh = !noMode && (state.inputMode === 'area' || schemeTooBig);
   workspace?.setAttribute('data-calc-mode', state.inputMode || 'none');
@@ -289,6 +305,7 @@ function updateSchemeModeUi() {
   if (hideScheme) {
     sketchEditor?.clearPanelPreview?.();
   }
+  syncModePanelsUi();
   syncMobileParamsBtn();
 }
 
@@ -325,12 +342,14 @@ function applyQuickRect() {
 }
 
 function syncFormToRoom() {
-  if (state.inputMode === 'scheme') {
-    state.room.wallHeight = parseFloat(els.form.quickHeight?.value)
-      || parseFloat(els.form.wallHeight?.value)
-      || state.room.wallHeight
-      || 2.7;
-    els.form.wallHeight.value = state.room.wallHeight;
+  if (isSketchMode()) {
+    const h = state.inputMode === 'draw'
+      ? (parseFloat($('drawHeight')?.value) || parseFloat(els.form.wallHeight?.value) || 2.7)
+      : (parseFloat(els.form.quickHeight?.value) || parseFloat(els.form.wallHeight?.value) || 2.7);
+    state.room.wallHeight = h;
+    els.form.wallHeight.value = h;
+    if (els.form.quickHeight) els.form.quickHeight.value = h;
+    if ($('drawHeight')) $('drawHeight').value = h;
   }
 }
 
@@ -342,7 +361,9 @@ function applyRoomToForm(room) {
   f.wallHeight.value = room.wallHeight;
   state.room = room.clone();
   state.forceAreaBySize = isRoomTooLargeForScheme(room.mainLength, room.mainWidth);
-  if (state.inputMode === 'scheme' && !state.forceAreaBySize) {
+  if (state.inputMode === 'dims' && !state.forceAreaBySize) {
+    sketchEditor?.syncFromRoom?.(state.room, { settle: true });
+  } else if (state.inputMode === 'draw') {
     sketchEditor?.syncFromRoom?.(state.room, { settle: true });
   } else {
     sketchEditor?.syncFromRoom?.(state.room, { settle: false });
@@ -465,73 +486,150 @@ function updateSurfaceGroupsUi() {
   f.wallMountingGroup?.classList.toggle('is-disabled', !wallsOn);
 
   const isArea = state.inputMode === 'area';
-  $('areaWallsBlock')?.toggleAttribute('hidden', !isArea);
+  $('areaWallsBlock')?.toggleAttribute('hidden', false);
+  if (isArea) renderAreaWallsList();
+
+  const refine = $('refineOpeningsCta');
+  if (refine) {
+    refine.hidden = !(isSketchMode() && state.hasResults && wallsOn);
+  }
 }
 
-function syncModeCardsUI() {
-  const paramsCard = $('paramsCalcCard');
+function syncModePanelsUi() {
+  const mode = state.inputMode;
+  const entry = $('entryPicker');
+  const bar = $('activeModeBar');
+  const label = $('activeModeLabel');
+  const shared = $('sharedCalcOptions');
+
+  if (entry) entry.hidden = !!mode;
+  if (bar) bar.hidden = !mode;
+  if (label) label.textContent = MODE_LABELS[mode] || '—';
+  if (shared) shared.hidden = !mode;
+
+  const dimsCard = $('dimsCalcCard');
+  const drawCard = $('drawCalcCard');
   const areaCard = $('quickCalcCard');
-  const paramsOpen = !!paramsCard?.classList.contains('expanded');
-  const areaOpen = !!areaCard?.classList.contains('expanded');
+  if (dimsCard) dimsCard.hidden = mode !== 'dims';
+  if (drawCard) drawCard.hidden = mode !== 'draw';
+  if (areaCard) areaCard.hidden = mode !== 'area';
 
-  paramsCard?.classList.toggle('active', paramsOpen);
-  areaCard?.classList.toggle('active', areaOpen);
-  $('toggleParamsCalc')?.classList.toggle('expanded-btn', paramsOpen);
-  $('toggleAreaCalc')?.classList.toggle('expanded-btn', areaOpen);
+  sketchEditor?.setGeometryLocked?.(mode === 'dims');
 }
 
-function setModeCardExpanded(mode, expanded) {
-  const card = mode === 'scheme' ? $('paramsCalcCard') : $('quickCalcCard');
-  if (!card) return;
-  card.classList.toggle('expanded', expanded);
-  card.removeAttribute('hidden');
-}
+/** Открыть режим (взаимоисключение dims | draw | area) */
+function setInputMode(mode, { confirmSwitch = false, preserveGeometry = false } = {}) {
+  const next = mode === 'scheme' ? 'dims' : mode;
+  if (next && !['dims', 'draw', 'area'].includes(next)) return;
 
-/** Открыть режим и закрыть другой (для загрузки из URL / init) */
-function setInputMode(mode) {
+  if (confirmSwitch && state.inputMode && state.inputMode !== next && state.hasResults) {
+    const ok = window.confirm('Сменить способ расчёта? Текущая схема и цифры будут пересобраны.');
+    if (!ok) return;
+  }
+
   const prev = state.inputMode;
-  state.inputMode = mode;
-  setModeCardExpanded('scheme', mode === 'scheme');
-  setModeCardExpanded('area', mode === 'area');
-  syncModeCardsUI();
-  refreshWallSurfaceCheckboxes();
-  updateSurfaceGroupsUi();
-  updateSchemeModeUi();
-  if (mode && prev !== mode) scheduleAutoRecalc();
-}
+  state.inputMode = next || null;
 
-function toggleModePanel(mode) {
-  const card = mode === 'scheme' ? $('paramsCalcCard') : $('quickCalcCard');
-  const other = mode === 'scheme' ? 'area' : 'scheme';
-  const isOpen = card?.classList.contains('expanded');
-
-  if (isOpen) {
-    setModeCardExpanded(mode, false);
-    state.inputMode = null;
-    syncModeCardsUI();
+  if (!next) {
+    state.hasResults = false;
+    state.bom = null;
+    lastPanelsSnapshot = null;
+    $('calcReadyBanner')?.setAttribute('hidden', '');
+    syncModePanelsUi();
     updateSchemeModeUi();
+    updateLayoutMode();
+    updateResultsPreview();
     return;
   }
 
-  const prev = state.inputMode;
-  state.inputMode = mode;
-  setModeCardExpanded(mode, true);
-  setModeCardExpanded(other, false);
-  syncModeCardsUI();
+  if (next === 'dims') {
+    if (!preserveGeometry) applyQuickRect();
+    else {
+      sketchEditor?.setGeometryLocked?.(true);
+      sketchEditor?.syncFromRoom?.(state.room, { settle: true, fit: true });
+    }
+    sketchEditor?.setGeometryLocked?.(true);
+  } else if (next === 'draw') {
+    state.forceAreaBySize = false;
+    const h = parseFloat($('drawHeight')?.value) || state.room.wallHeight || 2.7;
+    state.room.wallHeight = h;
+    els.form.wallHeight.value = h;
+    if (els.form.quickHeight) els.form.quickHeight.value = h;
+    if ($('drawHeight')) $('drawHeight').value = h;
+    sketchEditor?.setGeometryLocked?.(false);
+    if (!preserveGeometry) {
+      sketchEditor?.clear?.();
+      state.room.setVertices([], {}, {});
+      updatePlanStats();
+      refreshWallSurfaceCheckboxes();
+      void $('sketchEditorHost')?.offsetWidth;
+      sketchEditor?.fitToScreen?.();
+    } else {
+      void $('sketchEditorHost')?.offsetWidth;
+      sketchEditor?.syncFromRoom?.(state.room, { settle: true, fit: true });
+    }
+  } else if (next === 'area') {
+    sketchEditor?.setGeometryLocked?.(false);
+    if (!state.areaWalls.length) {
+      state.areaWalls = [];
+      renderAreaWallsList();
+    }
+  }
+
+  syncModePanelsUi();
   refreshWallSurfaceCheckboxes();
   updateSurfaceGroupsUi();
   updateSchemeModeUi();
-  if (mode === 'scheme' && !state.forceAreaBySize) {
-    // Layout после unhide — затем sync с fit (не рисуем в углу)
+
+  if (next === 'dims' && !state.forceAreaBySize && !preserveGeometry) {
     void $('sketchEditorHost')?.offsetWidth;
     sketchEditor?.syncFromRoom?.(state.room, { settle: true, fit: true });
   }
-  if (prev !== mode) scheduleAutoRecalc();
+
+  if (prev !== next) scheduleAutoRecalc();
 }
 
 function setupModeToggles() {
-  $('toggleParamsCalc')?.addEventListener('click', () => toggleModePanel('scheme'));
-  $('toggleAreaCalc')?.addEventListener('click', () => toggleModePanel('area'));
+  $('entryDimsBtn')?.addEventListener('click', () => setInputMode('dims'));
+  $('entryDrawBtn')?.addEventListener('click', () => setInputMode('draw'));
+  $('entryAreaBtn')?.addEventListener('click', () => setInputMode('area'));
+  $('changeModeBtn')?.addEventListener('click', () => setInputMode(null));
+
+  $('drawUploadPhotoBtn')?.addEventListener('click', () => {
+    $('sketchBgUploadBtn')?.click();
+  });
+  $('drawClearBtn')?.addEventListener('click', () => {
+    sketchEditor?.clear?.();
+    state.room.setVertices([], {}, {});
+    updatePlanStats();
+    refreshWallSurfaceCheckboxes();
+    scheduleAutoRecalc();
+  });
+  $('drawHeight')?.addEventListener('input', () => {
+    syncFormToRoom();
+    sketchEditor.wallHeightValue = state.room.wallHeight;
+    onExplicitChange();
+  });
+
+  $('refineOpeningsBtn')?.addEventListener('click', () => {
+    setSchemeView('walls');
+    sketchEditor?._openOpeningsModal?.();
+  });
+  $('readyOpenWallsBtn')?.addEventListener('click', () => setSchemeView('walls'));
+  $('readyShareBtn')?.addEventListener('click', () => handleShare());
+  $('shareBtnSecondary')?.addEventListener('click', () => handleShare());
+}
+
+function syncModeCardsUI() {
+  syncModePanelsUi();
+}
+
+function setModeCardExpanded(_mode, _expanded) {
+  /* legacy no-op — panels driven by inputMode */
+}
+
+function toggleModePanel(mode) {
+  setInputMode(mode === 'scheme' ? 'dims' : mode, { confirmSwitch: true });
 }
 
 function syncSegmentedFromSelect(selectId) {
@@ -568,25 +666,26 @@ function updateResultsPreview() {
   const collapseBtn = $('resultsCollapseBtn');
   if (!card || !preview || !textEl || !btn) return;
 
-  const wasExpanded = card.classList.contains('is-expanded');
   preview.style.maxHeight = '';
 
   if (!state.hasResults) {
-    card.classList.remove('is-expanded', 'is-short');
+    card.classList.add('is-expanded');
     btn.hidden = true;
     if (collapseBtn) collapseBtn.hidden = true;
     return;
   }
 
-  btn.hidden = false;
-  btn.textContent = wasExpanded ? 'Скрыть результаты' : 'Результаты расчёта';
-  if (collapseBtn) collapseBtn.hidden = !wasExpanded;
-
-  if (wasExpanded) {
-    requestAnimationFrame(() => {
-      preview.style.maxHeight = `${Math.max(textEl.scrollHeight + 8, 80)}px`;
-    });
+  // После первого расчёта результаты раскрыты по умолчанию
+  if (!card.classList.contains('is-expanded')) {
+    card.classList.add('is-expanded');
   }
+  btn.hidden = false;
+  btn.textContent = 'Скрыть результаты';
+  if (collapseBtn) collapseBtn.hidden = false;
+
+  requestAnimationFrame(() => {
+    preview.style.maxHeight = `${Math.max(textEl.scrollHeight + 8, 80)}px`;
+  });
 }
 
 function setupResultsExpand() {
@@ -648,6 +747,13 @@ function setupFormListeners() {
       const becameFramed = val === 'ceiling_framed' || val === 'wall_framed';
       if (becameFramed && $('showFrame')) {
         $('showFrame').checked = true;
+        if ($('showFrameMobile')) $('showFrameMobile').checked = true;
+        $('showFrameLabel')?.classList.add('is-highlighted');
+        $('showFrameMobileLabel')?.classList.add('is-highlighted');
+        setTimeout(() => {
+          $('showFrameLabel')?.classList.remove('is-highlighted');
+          $('showFrameMobileLabel')?.classList.remove('is-highlighted');
+        }, 2400);
       }
       syncPlanOverlayOptions();
       renderCeiling();
@@ -672,26 +778,33 @@ function setupSketchEditor() {
     inline: true,
     dialogsEl: $('sketchEditorModal'),
     onApply: ({ vertices, edgeDimensions, diagonalDimensions, wallHeight }) => {
+      if (state.inputMode === 'dims') return;
       state.room.setVertices(vertices, edgeDimensions, diagonalDimensions);
       if (wallHeight > 0) {
         state.room.wallHeight = wallHeight;
         els.form.wallHeight.value = wallHeight;
         if (els.form.quickHeight) els.form.quickHeight.value = wallHeight;
+        if ($('drawHeight')) $('drawHeight').value = wallHeight;
       }
-      els.form.quickLength.value = state.room.mainLength;
-      els.form.quickWidth.value = state.room.mainWidth;
       updatePlanStats();
       refreshWallSurfaceCheckboxes();
       onExplicitChange();
     },
     onRoomChange: ({ wallHeight } = {}) => {
+      if (state.inputMode === 'dims') {
+        if (wallHeight > 0) {
+          state.room.wallHeight = wallHeight;
+          els.form.wallHeight.value = wallHeight;
+          if (els.form.quickHeight) els.form.quickHeight.value = wallHeight;
+        }
+        return;
+      }
       if (wallHeight > 0) {
         state.room.wallHeight = wallHeight;
         els.form.wallHeight.value = wallHeight;
         if (els.form.quickHeight) els.form.quickHeight.value = wallHeight;
+        if ($('drawHeight')) $('drawHeight').value = wallHeight;
       }
-      els.form.quickLength.value = state.room.mainLength;
-      els.form.quickWidth.value = state.room.mainWidth;
       updatePlanStats();
       refreshWallSurfaceCheckboxes();
       onExplicitChange();
@@ -847,7 +960,7 @@ function validateBeforeCalc() {
     return ['Выберите хотя бы одну поверхность для расчёта'];
   }
 
-  const useArea = state.inputMode === 'area' || (state.inputMode === 'scheme' && state.forceAreaBySize);
+  const useArea = state.inputMode === 'area' || (state.inputMode === 'dims' && state.forceAreaBySize);
   if (useArea) {
     if (calcCeiling) {
       const area = state.inputMode === 'area'
@@ -862,6 +975,10 @@ function validateBeforeCalc() {
     return [];
   }
 
+  if (state.inputMode === 'draw' && (!state.room.vertices || state.room.vertices.length < 3)) {
+    return ['Нарисуйте и замкните контур схемы'];
+  }
+
   return validateRoomForm(null, state.room);
 }
 
@@ -871,6 +988,26 @@ function applyResultsToUi() {
   $('resultsText').textContent = text || 'Выполните расчёт, чтобы увидеть результаты.';
   updateStatCards();
   updateResultsPreview();
+  showCalcReadyBanner();
+}
+
+function showCalcReadyBanner() {
+  const banner = $('calcReadyBanner');
+  if (!banner || !state.hasResults || !state.bom?.total) return;
+  const panels = state.bom.total.panelsWithReserve ?? 0;
+  const deltaEl = $('calcReadyDelta');
+  const titleEl = $('calcReadyTitle');
+  let deltaText = '';
+  if (lastPanelsSnapshot != null && lastPanelsSnapshot !== panels) {
+    deltaText = `Панелей: ${lastPanelsSnapshot} → ${panels}`;
+    if (titleEl) titleEl.textContent = 'Расчёт обновлён';
+  } else if (titleEl) {
+    titleEl.textContent = 'Расчёт готов';
+  }
+  if (deltaEl) deltaEl.textContent = deltaText;
+  lastPanelsSnapshot = panels;
+  banner.hidden = false;
+  updateSurfaceGroupsUi();
 }
 
 function runQuickAreaCalc(area) {
@@ -900,6 +1037,7 @@ function runQuickAreaCalc(area) {
 
   state.hasResults = true;
   state.resultsStale = false;
+  showCalcReadyBanner();
   updateLayoutMode();
   updateStatCards();
   updateResultsPreview();
@@ -924,7 +1062,7 @@ function runCalculation(options = {}) {
   };
 
   let calcRoom = state.room;
-  const useAreaPath = state.inputMode === 'area' || (state.inputMode === 'scheme' && state.forceAreaBySize);
+  const useAreaPath = state.inputMode === 'area' || (state.inputMode === 'dims' && state.forceAreaBySize);
 
   if (useAreaPath) {
     const ceilingArea = state.inputMode === 'area'
@@ -1002,7 +1140,7 @@ function runCalculation(options = {}) {
       wallResults,
       stats: wc.getCombinedStatistics(wallResults),
     };
-  } else if (state.options.selectedWallIds.length > 0 && state.inputMode === 'scheme' && state.forceAreaBySize) {
+  } else if (state.options.selectedWallIds.length > 0 && state.inputMode === 'dims' && state.forceAreaBySize) {
     const L = parseFloat(f.quickLength?.value) || 0;
     const W = parseFloat(f.quickWidth?.value) || 0;
     const H = parseFloat(f.quickHeight?.value) || 2.7;
@@ -1035,6 +1173,8 @@ function runCalculation(options = {}) {
     options: state.options,
   });
 
+  state.hasResults = true;
+  state.resultsStale = false;
   applyResultsToUi();
   $('resultsTabs').style.display = 'flex';
 
@@ -1053,8 +1193,6 @@ function runCalculation(options = {}) {
   updateResultsTabsVisibility();
   if (state.activeView !== 'walls') setSchemeView('plan');
 
-  state.hasResults = true;
-  state.resultsStale = false;
   updateLayoutMode();
   updateSchemeModeUi();
   return true;
@@ -1253,7 +1391,7 @@ function loadFromUrl() {
   applyRoomToForm(room);
   applyOptionsToForm(data.options);
   if (data.inputMode) {
-    setInputMode(data.inputMode);
+    setInputMode(data.inputMode, { preserveGeometry: true });
   }
   if (data.areaValue && els.form.areaOnlyInput) {
     els.form.areaOnlyInput.value = data.areaValue;
@@ -1309,11 +1447,8 @@ function init() {
   $('shareBtn')?.addEventListener('click', handleShare);
   $('downloadBtn')?.addEventListener('click', handlePDF);
 
-  // Start with both modes collapsed
-  setModeCardExpanded('scheme', false);
-  setModeCardExpanded('area', false);
   state.inputMode = null;
-  syncModeCardsUI();
+  syncModePanelsUi();
   applyRoomToForm(state.room);
   refreshWallSurfaceCheckboxes();
   setSchemeView('plan');

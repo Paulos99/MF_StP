@@ -89,6 +89,7 @@ export class SketchEditor {
     this._blurPhase = 0;
     this._showPanelNumbers = true;
     this._showFrameOverlay = false;
+    this.geometryLocked = false;
 
     this.room = null;
     this.openingsModalOpen = false;
@@ -556,6 +557,7 @@ export class SketchEditor {
 
   clear() {
     if (this.openingsModalOpen) return;
+    if (this.geometryLocked) return;
     this._pushHistory();
     this.vertices = [];
     this.edgeDimensions = {};
@@ -571,6 +573,7 @@ export class SketchEditor {
   }
 
   _applyTemplate(name) {
+    if (this.geometryLocked) return;
     this._pushHistory();
     let verts;
     if (name === 'l-shape') verts = createLShapeVertices(5, 4, 2, 2);
@@ -839,6 +842,44 @@ export class SketchEditor {
     this.render();
   }
 
+  /** dims-mode: нельзя рисовать/ломать контур; можно зум, проёмы, просмотр */
+  setGeometryLocked(locked) {
+    this.geometryLocked = !!locked;
+    this.host?.classList.toggle('sketch-geometry-locked', this.geometryLocked);
+    if (this.geometryLocked) {
+      this._hideEdgeActions();
+      this.keypad?.hide?.();
+      this._selectedEdge = null;
+      this._selectedDiagonal = null;
+      this._dragIdx = null;
+      this._cancelLongPress?.(true);
+    }
+    this._syncLockedToolbar();
+    this._updateUi();
+    this.render();
+  }
+
+  _syncLockedToolbar() {
+    const locked = this.geometryLocked;
+    [
+      'sketchUndoBtn',
+      'sketchRedoBtn',
+      'sketchClearBtn',
+      'sketchTemplatesBtn',
+      'sketchBgUploadBtn',
+      'sketchHelpBtn',
+    ].forEach((id) => {
+      const el = this._q(`#${id}`);
+      if (!el) return;
+      el.disabled = locked;
+      el.hidden = locked;
+    });
+    const dropdown = this._q('#sketchTemplatesDropdown');
+    if (dropdown) dropdown.hidden = locked;
+    const edgeSize = this.edgeEditSizeBtn;
+    if (edgeSize) edgeSize.hidden = locked;
+  }
+
   worldToCanvas(x, y) {
     return { x: x * PX_PER_M * this.zoom + this.panX, y: y * PX_PER_M * this.zoom + this.panY };
   }
@@ -1061,6 +1102,31 @@ export class SketchEditor {
     }
 
     if (this.openingsModalOpen) return;
+
+    if (this.geometryLocked) {
+      if (this._selectedEdge !== null && this.closed) {
+        const action = this._hitTestEdgeActions(cx, cy);
+        if (action === 'openings') {
+          this._openOpeningsForSelectedEdge();
+          return;
+        }
+      }
+      const targetLocked = this._pickTarget(cx, cy);
+      if (targetLocked?.type === 'edge' && this.closed) {
+        this._selectedEdge = targetLocked.index;
+        this._selectedDiagonal = null;
+        this.keypad.hide();
+        this._positionEdgeActions();
+        this.render();
+        return;
+      }
+      if (this.closed && !targetLocked) {
+        this._selectedEdge = null;
+        this._hideEdgeActions();
+        this.render();
+      }
+      return;
+    }
 
     if (this._selectedEdge !== null && this.closed) {
       const action = this._hitTestEdgeActions(cx, cy);
@@ -1546,6 +1612,8 @@ export class SketchEditor {
       } else if (unset > 0) {
         bottomText += ` · ${unset} сторон без размера`;
         hintText = 'Задайте размеры — кликните по стороне, затем «Изменить размер»';
+      } else if (this.geometryLocked) {
+        hintText = 'Размеры задаются слева · клик по стороне — проёмы · вкладка «Стены»';
       } else {
         hintText = 'Контур готов · тяните углы или «Настроить стены»';
       }
