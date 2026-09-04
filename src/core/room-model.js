@@ -89,10 +89,11 @@ export class Room {
   rebuildWalls() {
     const edges = getEdges(this.vertices);
     this.walls = edges.map((e, i) => {
-      const letter = e.a.label || labelForIndex(i);
+      const from = e.a.label || labelForIndex(i);
+      const to = e.b.label || labelForIndex((i + 1) % Math.max(this.vertices.length, 1));
       return new WallSegment({
         id: `wall-${i}`,
-        label: `Стена ${letter}`,
+        label: `Стена ${from}${to}`,
         length: roundMeters(e.length),
         planStart: { x: e.a.x, y: e.a.y },
         planEnd: { x: e.b.x, y: e.b.y },

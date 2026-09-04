@@ -518,7 +518,7 @@ function refreshWallSurfaceCheckboxes() {
       (w) => `
       <label class="surface-chip surface-chip--toggle">
         <input type="checkbox" name="wallSurface" value="${w.id}" ${prev.has(w.id) ? 'checked' : ''} />
-        <span class="surface-chip__label">${w.label.replace(/^Стена\s+/i, '')}</span>
+        <span class="surface-chip__label">${w.label}</span>
       </label>`
     )
     .join('');
@@ -1277,7 +1277,7 @@ function populateWallSelect() {
       btn.type = 'button';
       btn.className = 'wall-chip' + (i === 0 ? ' is-active' : '');
       btn.dataset.wallId = w.wall.id;
-      btn.textContent = w.wall.label.replace(/^Стена\s+/i, '');
+      btn.textContent = w.wall.label;
       btn.addEventListener('click', () => {
         if (sel) sel.value = w.wall.id;
         syncWallChipsActive();
