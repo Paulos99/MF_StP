@@ -1559,14 +1559,44 @@ export class SketchEditor {
     return Math.hypot(px - (x1 + t * dx), py - (y1 + t * dy));
   }
 
-  _addOpening(type) {
+  _addOpening(type, { offset } = {}) {
     if (!this.room || !this.selectedWallId) return;
     const opening = createDefaultOpening(this.selectedWallId, type);
     const wall = this.room.walls.find((w) => w.id === this.selectedWallId);
-    if (wall) opening.offset = roundMeters(Math.max(0, (wall.length - opening.width) / 2));
+    if (wall) {
+      const max = Math.max(0, wall.length - opening.width);
+      if (offset != null && Number.isFinite(offset)) {
+        opening.offset = roundMeters(Math.max(0, Math.min(max, offset)));
+      } else {
+        opening.offset = roundMeters(Math.max(0, (wall.length - opening.width) / 2));
+      }
+    }
     this.room.addOpening(opening);
     this._selectOpening(opening.id);
     this.onRoomChange?.(this._roomChangePayload());
+    this._refreshOpeningsPanel();
+    requestAnimationFrame(() => {
+      this.wallElevation?.focusOpening?.(opening.id);
+    });
+    this.render();
+  }
+
+  /** Demo helper: move selected (or last) opening to the left/right side of its wall. */
+  _placeOpeningAside(side = 'left', openingId = null) {
+    if (!this.room) return;
+    const id = openingId || this.selectedOpeningId;
+    const opening = this.room.getOpening(id) || this.room.openings.at(-1);
+    if (!opening) return;
+    const wall = this.room.walls.find((w) => w.id === opening.wallId);
+    if (!wall) return;
+    const margin = 0.7;
+    const max = Math.max(0, wall.length - opening.width);
+    opening.offset = roundMeters(
+      side === 'right' ? Math.max(0, max - margin) : Math.min(max, margin),
+    );
+    this._selectOpening(opening.id);
+    this.onRoomChange?.(this._roomChangePayload());
+    this._syncOpeningProps(opening.id);
     this._refreshOpeningsPanel();
     requestAnimationFrame(() => {
       this.wallElevation?.focusOpening?.(opening.id);

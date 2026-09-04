@@ -68,7 +68,7 @@ export class VirtualCursor {
     }
   }
 
-  async moveTo(target, { duration = 980 } = {}) {
+  async moveTo(target, { duration = 1400 } = {}) {
     this.show();
     const point = target instanceof Element ? centerOf(target) : target;
     if (!point || Number.isNaN(point.x)) return;
@@ -85,7 +85,8 @@ export class VirtualCursor {
     const fromX = this.x;
     const fromY = this.y;
     const dist = Math.hypot(point.x - fromX, point.y - fromY);
-    const ms = Math.max(420, Math.min(duration, 360 + dist * 0.9));
+    // Prefer requested duration so demos stay readable; scale up a bit for long paths.
+    const ms = Math.max(duration, 720 + dist * 1.15);
 
     await new Promise((resolve) => {
       const start = performance.now();
@@ -110,16 +111,17 @@ export class VirtualCursor {
     if (target instanceof Element || (target && typeof target.x === 'number')) {
       await this.moveTo(target, moveOpts);
     }
+    await sleep(160);
     this.el?.classList.add('is-pressing');
     this.ripple?.classList.remove('is-burst');
     void this.ripple?.offsetWidth;
     this.ripple?.classList.add('is-burst');
-    await sleep(180);
+    await sleep(260);
     if (target instanceof Element) {
       target.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, cancelable: true }));
       target.click();
     }
-    await sleep(220);
+    await sleep(320);
     this.el?.classList.remove('is-pressing');
   }
 }

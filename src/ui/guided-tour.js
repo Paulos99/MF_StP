@@ -69,10 +69,16 @@ export class GuidedTour {
     this._onComplete = null;
     this._onSkip = null;
     this._cardPos = null;
+    this._cardLocked = false;
     this._boundKey = (e) => this._onKey(e);
     this._boundResize = () => this._onViewportChange();
     this._boundScroll = () => {
-      if (this.active) this._position();
+      if (!this.active) return;
+      if (this._cardLocked) {
+        if (this._spotlightTarget) this.refreshSpotlight(this._spotlightTarget, this._spotlightOpts || {});
+        return;
+      }
+      this._position();
     };
     this._mq = window.matchMedia(MOBILE_MQ);
     this._boundMq = () => {
@@ -131,6 +137,9 @@ export class GuidedTour {
     this.active = true;
     activeTour = this;
     this._cardPos = null;
+    this._cardLocked = false;
+    this._spotlightTarget = null;
+    this._spotlightOpts = null;
 
     this.root.hidden = false;
     document.body.classList.add('tour-active');
@@ -160,6 +169,7 @@ export class GuidedTour {
     aboveFooter = false,
     scrollBlock = 'nearest',
     stepLabel = '',
+    lockCard = false,
   } = {}) {
     if (!this.active) return;
     const mobile = isMobileLayout();
@@ -179,7 +189,10 @@ export class GuidedTour {
     this.card.classList.toggle('tour-card--above-footer', Boolean(aboveFooter && mobile));
 
     const el = resolveTarget(target);
-    if (el?.scrollIntoView) {
+    this._spotlightTarget = el;
+    this._spotlightOpts = { pad, radius, aboveFooter };
+
+    if (el?.scrollIntoView && !this._cardLocked) {
       try {
         el.scrollIntoView({
           behavior: prefersReducedMotion() ? 'auto' : 'smooth',
@@ -190,8 +203,22 @@ export class GuidedTour {
       } catch { /* ignore */ }
     }
 
-    this._position(el, { pad, radius, aboveFooter });
-    await waitFrames(prefersReducedMotion() ? 40 : CARD_MOVE_MS);
+    if (this._cardLocked) {
+      this.refreshSpotlight(el, { pad, radius, aboveFooter });
+    } else {
+      this._position(el, { pad, radius, aboveFooter });
+      await waitFrames(prefersReducedMotion() ? 40 : CARD_MOVE_MS);
+      if (lockCard) this._cardLocked = true;
+    }
+  }
+
+  /** Keep the floating card where it is; only spotlight may update. */
+  lockCard() {
+    this._cardLocked = true;
+  }
+
+  unlockCard() {
+    this._cardLocked = false;
   }
 
   /** Change title/text only — no spotlight/card jump. */
@@ -212,6 +239,8 @@ export class GuidedTour {
     if (!this.active) return;
     const el = resolveTarget(target);
     if (!el?.getBoundingClientRect) return;
+    this._spotlightTarget = el;
+    this._spotlightOpts = opts;
     const mobile = isMobileLayout();
     const pad = opts.pad ?? 10;
     const radius = opts.radius ?? 12;
@@ -347,6 +376,10 @@ export class GuidedTour {
 
   _onViewportChange() {
     if (!this.active) return;
+    if (this._cardLocked) {
+      if (this._spotlightTarget) this.refreshSpotlight(this._spotlightTarget, this._spotlightOpts || {});
+      return;
+    }
     this._position();
   }
 
@@ -514,6 +547,9 @@ export class GuidedTour {
     this.stepIndex = 0;
     this.demoMode = false;
     this._cardPos = null;
+    this._cardLocked = false;
+    this._spotlightTarget = null;
+    this._spotlightOpts = null;
   }
 }
 
