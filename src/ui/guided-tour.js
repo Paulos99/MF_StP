@@ -1,8 +1,7 @@
 const MOBILE_MQ = '(max-width: 899px)';
 const SPOTLIGHT_PAD = 10;
 const LAYOUT_WAIT_MS = 80;
-const CARD_MOVE_MS = 620;
-const CARD_STICKY_SLACK = 12;
+const CARD_MOVE_MS = 320;
 
 let activeTour = null;
 
@@ -20,19 +19,6 @@ function waitFrames(ms = LAYOUT_WAIT_MS) {
       setTimeout(resolve, ms);
     });
   });
-}
-
-function rectsOverlap(a, b, slack = 0) {
-  return !(
-    a.left + a.width + slack <= b.left
-    || b.left + b.width + slack <= a.left
-    || a.top + a.height + slack <= b.top
-    || b.top + b.height + slack <= a.top
-  );
-}
-
-function clamp(n, min, max) {
-  return Math.min(max, Math.max(min, n));
 }
 
 function resolveTarget(selector) {
