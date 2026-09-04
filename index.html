@@ -29,18 +29,89 @@
             <div id="entryPicker" class="entry-picker">
               <h2 class="entry-picker__title">Что вы знаете о помещении?</h2>
               <p class="entry-picker__lead">Выберите способ — от него зависит, как считать материалы</p>
-              <button type="button" class="entry-card" data-entry="dims" id="entryDimsBtn">
-                <span class="entry-card__title">Ввести размеры</span>
-                <span class="entry-card__desc">Знаю длину и ширину — прямоугольная комната</span>
-              </button>
-              <button type="button" class="entry-card" data-entry="draw" id="entryDrawBtn">
-                <span class="entry-card__title">Нарисовать схему</span>
-                <span class="entry-card__desc">Сложная форма или есть чертёж — рисуем с нуля</span>
-              </button>
-              <button type="button" class="entry-card entry-card--secondary" data-entry="area" id="entryAreaBtn">
-                <span class="entry-card__title">По площади</span>
-                <span class="entry-card__desc">Нет размеров стен — примерная оценка в м²</span>
-              </button>
+
+              <div class="entry-block" data-entry="dims">
+                <button type="button" class="entry-card" data-entry="dims" id="entryDimsBtn" aria-expanded="false" aria-controls="dimsCalcCard">
+                  <span class="entry-card__body">
+                    <span class="entry-card__title">Ввести размеры</span>
+                    <span class="entry-card__desc">Знаю длину и ширину — прямоугольная комната</span>
+                  </span>
+                  <span class="entry-card__chevron" aria-hidden="true"></span>
+                </button>
+                <div class="entry-block__collapse">
+                  <div class="entry-block__inner">
+                    <div class="card input-panel expanded active entry-panel" id="dimsCalcCard" data-mode-panel="dims">
+                      <h2 class="calc-panel-title">Размеры комнаты</h2>
+                      <div class="form-group">
+                        <label for="quickLength">Длина, м</label>
+                        <input type="number" id="quickLength" value="5" step="0.01" min="0.1" max="100" />
+                      </div>
+                      <div class="form-group">
+                        <label for="quickWidth">Ширина, м</label>
+                        <input type="number" id="quickWidth" value="4" step="0.01" min="0.1" max="100" />
+                      </div>
+                      <div class="form-group">
+                        <label for="quickHeight">Высота, м</label>
+                        <input type="number" id="quickHeight" value="2.7" step="0.01" min="0.1" max="10" />
+                      </div>
+                      <div class="plan-stats" id="planStatsDims">Площадь: — · Периметр: —</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="entry-block" data-entry="draw">
+                <button type="button" class="entry-card" data-entry="draw" id="entryDrawBtn" aria-expanded="false" aria-controls="drawCalcCard">
+                  <span class="entry-card__body">
+                    <span class="entry-card__title">Нарисовать схему</span>
+                    <span class="entry-card__desc">Сложная форма или есть чертёж — рисуем с нуля</span>
+                  </span>
+                  <span class="entry-card__chevron" aria-hidden="true"></span>
+                </button>
+                <div class="entry-block__collapse">
+                  <div class="entry-block__inner">
+                    <div class="card input-panel expanded active entry-panel" id="drawCalcCard" data-mode-panel="draw">
+                      <h2 class="calc-panel-title">Своя схема</h2>
+                      <div class="form-group">
+                        <label for="drawHeight">Высота стен, м</label>
+                        <input type="number" id="drawHeight" value="2.7" step="0.01" min="0.1" max="10" />
+                      </div>
+                      <div class="plan-stats" id="planStatsDraw">Площадь: — · Периметр: —</div>
+                      <div class="draw-actions">
+                        <button type="button" class="btn btn-secondary btn-sm" id="drawUploadPhotoBtn">Фото плана</button>
+                        <button type="button" class="btn-link" id="drawClearBtn">Очистить</button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="entry-block" data-entry="area">
+                <button type="button" class="entry-card entry-card--secondary" data-entry="area" id="entryAreaBtn" aria-expanded="false" aria-controls="quickCalcCard">
+                  <span class="entry-card__body">
+                    <span class="entry-card__title">По площади</span>
+                    <span class="entry-card__desc">Нет размеров стен — примерная оценка в м²</span>
+                  </span>
+                  <span class="entry-card__chevron" aria-hidden="true"></span>
+                </button>
+                <div class="entry-block__collapse">
+                  <div class="entry-block__inner">
+                    <div class="card input-panel expanded active entry-panel" id="quickCalcCard" data-mode-panel="area">
+                      <h2 class="calc-panel-title">Оценка по площади</h2>
+                      <p class="hint-text">Приблизительный расчёт без схемы — когда нет точных размеров.</p>
+                      <div class="form-group">
+                        <label for="areaOnlyInput">Площадь потолка, м²</label>
+                        <input type="number" id="areaOnlyInput" placeholder="35" step="0.1" min="0.1" />
+                      </div>
+                      <div id="areaWallsBlock">
+                        <p class="hint-text">Стены (площадь каждой, м²)</p>
+                        <div id="areaWallsList" class="area-walls-list"></div>
+                        <button type="button" class="btn btn-secondary btn-sm area-add-wall-btn" id="addAreaWallBtn">+ Добавить стену</button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
             </div>
 
             <div id="activeModeBar" class="active-mode-bar" hidden>
@@ -48,54 +119,13 @@
                 <span class="active-mode-bar__label">Способ</span>
                 <strong id="activeModeLabel">—</strong>
               </div>
-              <button type="button" class="btn-link" id="changeModeBtn">Сменить</button>
+              <button type="button" class="btn-link" id="changeModeBtn">Свернуть</button>
             </div>
 
-            <div class="card input-panel expanded active" id="dimsCalcCard" data-mode-panel="dims" hidden>
-              <h2 class="calc-panel-title">Размеры комнаты</h2>
-              <div class="form-group">
-                <label for="quickLength">Длина, м</label>
-                <input type="number" id="quickLength" value="5" step="0.01" min="0.1" max="100" />
-              </div>
-              <div class="form-group">
-                <label for="quickWidth">Ширина, м</label>
-                <input type="number" id="quickWidth" value="4" step="0.01" min="0.1" max="100" />
-              </div>
-              <div class="form-group">
-                <label for="quickHeight">Высота, м</label>
-                <input type="number" id="quickHeight" value="2.7" step="0.01" min="0.1" max="10" />
-              </div>
-              <div class="plan-stats" id="planStatsDims">Площадь: — · Периметр: —</div>
-            </div>
-
-            <div class="card input-panel expanded active" id="drawCalcCard" data-mode-panel="draw" hidden>
-              <h2 class="calc-panel-title">Своя схема</h2>
-              <div class="form-group">
-                <label for="drawHeight">Высота стен, м</label>
-                <input type="number" id="drawHeight" value="2.7" step="0.01" min="0.1" max="10" />
-              </div>
-              <div class="plan-stats" id="planStatsDraw">Площадь: — · Периметр: —</div>
-              <div class="draw-actions">
-                <button type="button" class="btn btn-secondary btn-sm" id="drawUploadPhotoBtn">Фото плана</button>
-                <button type="button" class="btn-link" id="drawClearBtn">Очистить</button>
-              </div>
-            </div>
-
-            <div class="card input-panel expanded active" id="quickCalcCard" data-mode-panel="area" hidden>
-              <h2 class="calc-panel-title">Оценка по площади</h2>
-              <p class="hint-text">Приблизительный расчёт без схемы — когда нет точных размеров.</p>
-              <div class="form-group">
-                <label for="areaOnlyInput">Площадь потолка, м²</label>
-                <input type="number" id="areaOnlyInput" placeholder="35" step="0.1" min="0.1" />
-              </div>
-              <div id="areaWallsBlock">
-                <p class="hint-text">Стены (площадь каждой, м²)</p>
-                <div id="areaWallsList" class="area-walls-list"></div>
-                <button type="button" class="btn btn-secondary btn-sm area-add-wall-btn" id="addAreaWallBtn">+ Добавить стену</button>
-              </div>
-            </div>
-
-            <div id="sharedCalcOptions" class="card input-panel expanded active shared-calc-options" hidden>
+            <div id="sharedReveal" class="shared-reveal">
+              <div class="shared-reveal__collapse">
+                <div class="shared-reveal__inner">
+            <div id="sharedCalcOptions" class="card input-panel expanded active shared-calc-options">
               <h3 class="calc-panel-title">Что считать</h3>
               <div class="surface-chips" id="surfaceChips">
                 <label class="surface-chip surface-chip--toggle">
@@ -138,6 +168,9 @@
                 <button type="button" class="btn btn-secondary btn-sm" id="refineOpeningsBtn">Уточнить: двери и окна</button>
               </div>
               <div id="schemeWallsBlock" hidden aria-hidden="true"></div>
+            </div>
+                </div>
+              </div>
             </div>
 
             <button type="button" id="toggleParamsCalc" hidden aria-hidden="true"></button>

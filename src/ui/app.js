@@ -285,9 +285,20 @@ function syncChromeUi() {
   if ($('shareBtnSecondary')) $('shareBtnSecondary').disabled = !ready;
 
   // В draw до замкнутого контура — только высота/фото, без «что считать»
+  const sharedReveal = $('sharedReveal');
   const shared = $('sharedCalcOptions');
+  const showShared = !!mode && !(mode === 'draw' && !drawReady);
+  if (sharedReveal) {
+    sharedReveal.classList.toggle('is-open', showShared);
+    const collapse = sharedReveal.querySelector('.shared-reveal__collapse');
+    if (collapse) {
+      if (showShared) collapse.removeAttribute('inert');
+      else collapse.setAttribute('inert', '');
+    }
+  }
   if (shared) {
-    shared.hidden = !mode || (mode === 'draw' && !drawReady);
+    shared.hidden = false;
+    shared.setAttribute('aria-hidden', showShared ? 'false' : 'true');
   }
 
   // Оверлеи схемы — только когда есть раскладка
@@ -558,21 +569,45 @@ function syncModePanelsUi() {
   const bar = $('activeModeBar');
   const label = $('activeModeLabel');
 
-  if (entry) entry.hidden = !!mode;
-  if (bar) bar.hidden = !mode;
+  if (entry) {
+    entry.hidden = false;
+    entry.classList.toggle('has-mode', !!mode);
+  }
+  // Аккордеон заменяет «сменить способ» — бар прячем
+  if (bar) bar.hidden = true;
   if (label) label.textContent = MODE_LABELS[mode] || '—';
+
+  document.querySelectorAll('.entry-block').forEach((block) => {
+    const isOpen = !!mode && block.dataset.entry === mode;
+    block.classList.toggle('is-open', isOpen);
+    const btn = block.querySelector('.entry-card');
+    btn?.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+    const collapse = block.querySelector('.entry-block__collapse');
+    if (collapse) {
+      if (isOpen) collapse.removeAttribute('inert');
+      else collapse.setAttribute('inert', '');
+    }
+  });
+
+  const openBlock = mode
+    ? document.querySelector(`.entry-block[data-entry="${mode}"]`)
+    : null;
+  if (openBlock && typeof openBlock.scrollIntoView === 'function') {
+    requestAnimationFrame(() => {
+      openBlock.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    });
+  }
 
   const dimsCard = $('dimsCalcCard');
   const drawCard = $('drawCalcCard');
   const areaCard = $('quickCalcCard');
   if (dimsCard) {
-    dimsCard.hidden = mode !== 'dims';
-    // Площадь/периметр уже на схеме — не дублируем в сайдбаре
+    dimsCard.hidden = false;
     const stats = $('planStatsDims');
     if (stats) stats.hidden = true;
   }
-  if (drawCard) drawCard.hidden = mode !== 'draw';
-  if (areaCard) areaCard.hidden = mode !== 'area';
+  if (drawCard) drawCard.hidden = false;
+  if (areaCard) areaCard.hidden = false;
 
   sketchEditor?.setGeometryLocked?.(mode === 'dims');
   // В dims размеры уже слева и на рёбрах — нижняя строка площади дублирует
@@ -656,9 +691,16 @@ function setInputMode(mode, { confirmSwitch = false, preserveGeometry = false } 
 }
 
 function setupModeToggles() {
-  $('entryDimsBtn')?.addEventListener('click', () => setInputMode('dims'));
-  $('entryDrawBtn')?.addEventListener('click', () => setInputMode('draw'));
-  $('entryAreaBtn')?.addEventListener('click', () => setInputMode('area'));
+  const toggleEntry = (mode) => {
+    if (state.inputMode === mode) {
+      setInputMode(null, { confirmSwitch: !!state.hasResults });
+      return;
+    }
+    setInputMode(mode, { confirmSwitch: true });
+  };
+  $('entryDimsBtn')?.addEventListener('click', () => toggleEntry('dims'));
+  $('entryDrawBtn')?.addEventListener('click', () => toggleEntry('draw'));
+  $('entryAreaBtn')?.addEventListener('click', () => toggleEntry('area'));
   $('changeModeBtn')?.addEventListener('click', () => setInputMode(null));
 
   $('drawUploadPhotoBtn')?.addEventListener('click', () => {
