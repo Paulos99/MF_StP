@@ -1,7 +1,7 @@
 import { Room } from '../core/room-model.js';
 import { PolygonPanelCalculator } from '../calculators/polygon-ceiling-calculator.js';
 import { WallCalculator } from '../calculators/wall-calculator.js';
-import { buildBOM, formatResultsHtml } from '../calculators/materials-bom.js';
+import { buildBOM, renderResultsHtml } from '../calculators/materials-bom.js';
 import { PANEL, PANEL_COVERAGE_AREA, RESERVES } from '../core/constants.js';
 import { createRectangleVertices } from '../core/polygon-geometry.js';
 import { buildEdgeDimensionsFromVertices } from '../editor/sketch-constraints.js';
@@ -322,9 +322,13 @@ function clearResultsUi(message = '') {
   lastPanelsSnapshot = null;
   const textEl = $('resultsText');
   if (textEl) {
-    renderResultsContent(message || (state.inputMode
-      ? 'Цифры появятся после расчёта'
-      : 'Выберите способ расчёта слева — здесь появятся детали.'), { asHtml: false });
+    if (message) {
+      textEl.innerHTML = `<div class="rb-empty">${message.replace(/</g, '&lt;')}</div>`;
+    } else {
+      textEl.innerHTML = `<div class="rb-empty">${state.inputMode
+        ? 'Цифры появятся после расчёта'
+        : 'Выберите способ слева — здесь появятся детали'}</div>`;
+    }
   }
   sketchEditor?.clearPanelPreview?.();
   updateResultsTabsVisibility();
@@ -1054,24 +1058,14 @@ function validateBeforeCalc() {
   return validateRoomForm(null, state.room);
 }
 
-function renderResultsContent(htmlOrText, { asHtml = false } = {}) {
-  const el = $('resultsText');
-  if (!el) return;
-  if (asHtml) {
-    el.classList.add('results-text--rich');
-    el.innerHTML = htmlOrText || '<p class="results-empty">Выполните расчёт, чтобы увидеть результаты.</p>';
-  } else {
-    el.classList.remove('results-text--rich');
-    el.textContent = htmlOrText || 'Выберите способ расчёта слева — здесь появятся детали.';
-  }
-}
-
 function applyResultsToUi() {
   const bom = state.bom;
-  const isAreaEstimate = state.inputMode === 'area'
-    || (state.inputMode === 'dims' && state.forceAreaBySize);
-  const html = bom ? formatResultsHtml(bom, { isAreaEstimate }) : '';
-  renderResultsContent(html, { asHtml: true });
+  const el = $('resultsText');
+  if (el) {
+    el.innerHTML = bom
+      ? renderResultsHtml(bom, { mode: state.inputMode })
+      : `<div class="rb-empty">Выполните расчёт, чтобы увидеть результаты.</div>`;
+  }
   updateStatCards();
   updateResultsPreview();
   flashCalcReadyStatus();
@@ -1108,35 +1102,34 @@ function runQuickAreaCalc(area) {
     total: {
       panelsWithReserve: withReserve,
       totalCost: cost,
+      dowelsWithReserve: dowels,
     },
-    ceiling: { area },
+    ceiling: {
+      schemeName: 'По площади',
+      mountingLabel: 'Оценка по площади',
+      area,
+      stats: {
+        total: panels,
+        fullPanels: panels,
+        cutPanels: 0,
+        panelsToPurchase: panels,
+        withReserve,
+        coverageArea: area.toFixed(2),
+        netArea: area.toFixed(2),
+        dowels: { base: panels * RESERVES.dowelsPerPanel, withReserve: dowels },
+        totalCost: cost,
+      },
+    },
     walls: null,
   };
-  renderResultsContent(`<div class="results-report">
-    <p class="results-report__note">Оценка по площади — раскладка и подрезка не считаются</p>
-    <section class="results-block">
-      <header class="results-block__head">
-        <h3 class="results-block__title">Потолок</h3>
-        <span class="results-block__tag">оценка</span>
-      </header>
-      <div class="results-kpis">
-        <div class="results-kpi"><span class="results-kpi__value">${withReserve}</span><span class="results-kpi__label">панелей</span></div>
-        <div class="results-kpi"><span class="results-kpi__value">${area.toFixed(2)}</span><span class="results-kpi__label">м²</span></div>
-        <div class="results-kpi"><span class="results-kpi__value">${dowels}</span><span class="results-kpi__label">дюбелей</span></div>
-      </div>
-    </section>
-  </div>`, { asHtml: true });
+  state.hasResults = true;
+  state.resultsStale = false;
+  applyResultsToUi();
   $('resultsTabs').style.display = 'flex';
   document.querySelector('#resultsTabs .tab-btn[data-tab="ceiling"]')?.setAttribute('hidden', '');
   document.querySelector('#resultsTabs .tab-btn[data-tab="walls"]')?.setAttribute('hidden', '');
   setSchemeView('plan');
-
-  state.hasResults = true;
-  state.resultsStale = false;
-  flashCalcReadyStatus();
   updateLayoutMode();
-  updateStatCards();
-  updateResultsPreview();
 }
 
 function runCalculation(options = {}) {

@@ -57,7 +57,7 @@ export function buildBOM({ room, ceilingResult, wallResult, options }) {
     if (wallMounting === 'wall_framed') {
       const wallFrames = wallResult.wallResults.map((wr) =>
         calculateFrameMaterials('wall_framed', wr.wall.length, room.wallHeight, {
-          panelCount: wr.panels?.length ?? 0,
+          panelCount: wr.panelCount ?? wr.panels?.length ?? 0,
           openings: wr.openings ?? [],
         })
       );
@@ -135,7 +135,7 @@ export function buildWallSurfaceStats(wr, mountingType, wallHeight) {
   };
 }
 
-function escHtml(value) {
+function esc(value) {
   return String(value ?? '')
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
@@ -143,156 +143,216 @@ function escHtml(value) {
     .replace(/"/g, '&quot;');
 }
 
-function formatPanelSplit(stats, { isEstimate = false } = {}) {
-  const total = stats?.panelsToPurchase ?? stats?.total ?? 0;
-  const full = stats?.fullPanels ?? 0;
+function fmtNum(n) {
+  return Number(n || 0).toLocaleString('ru-RU');
+}
+
+function fmtArea(n) {
+  const v = typeof n === 'string' ? parseFloat(n) : Number(n);
+  if (!Number.isFinite(v)) return '—';
+  return `${v.toFixed(2)} м²`;
+}
+
+function isAreaEstimate(bom, mode) {
+  if (mode === 'area') return true;
+  return bom?.ceiling?.schemeName === 'По площади'
+    || bom?.walls?.wallResults?.some((wr) => wr.panelCount != null && !(wr.panels?.length));
+}
+
+function panelsBreakdown(stats, { areaMode = false } = {}) {
+  const total = stats?.panelsToPurchase ?? stats?.total ?? stats?.fullPanels ?? 0;
+  const full = stats?.fullPanels ?? total;
   const cut = stats?.cutPanels ?? 0;
-  if (isEstimate) {
+  const withReserve = stats?.withReserve ?? total;
+
+  if (areaMode || cut === 0) {
     return {
-      primary: String(total),
-      detail: null,
+      primary: fmtNum(total),
+      primaryUnit: 'панелей',
+      detail: withReserve > total
+        ? `к закупке с запасом 5%: <strong>${fmtNum(withReserve)}</strong>`
+        : '',
     };
   }
-  if (cut > 0) {
-    return {
-      primary: String(total),
-      detail: `${full} целых · ${cut} с подрезкой`,
-    };
-  }
+
   return {
-    primary: String(total),
-    detail: 'без подрезки',
+    primary: fmtNum(total),
+    primaryUnit: 'панелей',
+    detail: `${fmtNum(full)} целых · ${fmtNum(cut)} с подрезкой`
+      + (withReserve > total ? ` · к закупке <strong>${fmtNum(withReserve)}</strong>` : ''),
   };
 }
 
-function metricHtml(value, label, detail = null) {
-  return `<div class="results-kpi">
-    <span class="results-kpi__value">${escHtml(value)}</span>
-    <span class="results-kpi__label">${escHtml(label)}</span>
-    ${detail ? `<span class="results-kpi__detail">${escHtml(detail)}</span>` : ''}
-  </div>`;
+function renderFrameBlock(title, frame) {
+  if (!frame?.items?.length) return '';
+  const rows = formatFrameMaterials(frame, '')
+    .map((line) => `<li>${esc(line.trim())}</li>`)
+    .join('');
+  return `
+    <div class="rb-frame">
+      <div class="rb-frame__title">${esc(title)}</div>
+      <ul class="rb-frame__list">${rows}</ul>
+    </div>`;
 }
 
-function frameListHtml(frame, title) {
-  if (!frame) return '';
-  const lines = formatFrameMaterials(frame, '');
-  if (!lines.length) return '';
-  return `<div class="results-frame">
-    <div class="results-frame__title">${escHtml(title)}</div>
-    <ul class="results-frame__list">${lines.map((line) => `<li>${escHtml(line.trim())}</li>`).join('')}</ul>
-  </div>`;
-}
-
-/** Структурированный HTML отчёта для колонки «Результаты» */
-export function formatResultsHtml(bom, { isAreaEstimate = false } = {}) {
-  if (!bom) return '';
-  const parts = [];
-
-  if (isAreaEstimate) {
-    parts.push('<p class="results-report__note">Оценка по площади — раскладка и подрезка не считаются</p>');
+/** Структурированный HTML отчёта для правой колонки */
+export function renderResultsHtml(bom, { mode = null } = {}) {
+  if (!bom?.ceiling && !bom?.walls) {
+    return `<div class="rb-empty">Выполните расчёт — здесь появятся детали по поверхностям.</div>`;
   }
+
+  const areaMode = isAreaEstimate(bom, mode);
+  const parts = [];
 
   if (bom.ceiling?.stats) {
     const s = bom.ceiling.stats;
-    const panels = formatPanelSplit(s, { isEstimate: isAreaEstimate });
-    const area = Number(s.coverageArea ?? s.netArea ?? bom.ceiling.area ?? 0);
-    parts.push(`<section class="results-block">
-      <header class="results-block__head">
-        <h3 class="results-block__title">Потолок</h3>
-        <span class="results-block__tag">${isAreaEstimate ? 'оценка' : escHtml(bom.ceiling.mountingLabel || '')}</span>
-      </header>
-      <div class="results-kpis">
-        ${metricHtml(panels.primary, 'панелей', panels.detail)}
-        ${metricHtml(area.toFixed(2), 'м²')}
-        ${metricHtml(s.dowels?.withReserve ?? 0, 'дюбелей')}
-      </div>
-      ${frameListHtml(bom.ceiling.frame, 'Каркас потолка')}
-    </section>`);
+    const pb = panelsBreakdown(s, { areaMode });
+    const area = s.netArea ?? s.coverageArea ?? bom.ceiling.area;
+    const meta = areaMode
+      ? `Оценка по площади · ${fmtArea(area)}`
+      : `${esc(bom.ceiling.schemeName || 'Схема')} · ${esc(bom.ceiling.mountingLabel || '')} · ${fmtArea(area)}`;
+
+    parts.push(`
+      <section class="rb-block">
+        <header class="rb-block__head">
+          <h3 class="rb-block__title">Потолок</h3>
+          <span class="rb-block__meta">${meta}</span>
+        </header>
+        <div class="rb-metric">
+          <div class="rb-metric__value">${pb.primary}<span class="rb-metric__unit">${pb.primaryUnit}</span></div>
+          ${pb.detail ? `<div class="rb-metric__detail">${pb.detail}</div>` : ''}
+        </div>
+        <div class="rb-kv">
+          <span>Дюбели</span>
+          <strong>${fmtNum(s.dowels?.withReserve ?? 0)} шт.</strong>
+        </div>
+        ${renderFrameBlock('Каркас потолка', bom.ceiling.frame)}
+      </section>`);
+  } else if (bom.ceiling?.area && !bom.ceiling?.stats) {
+    // quick area fallback
+    parts.push(`
+      <section class="rb-block">
+        <header class="rb-block__head">
+          <h3 class="rb-block__title">Потолок</h3>
+          <span class="rb-block__meta">Оценка по площади · ${fmtArea(bom.ceiling.area)}</span>
+        </header>
+      </section>`);
   }
 
   if (bom.walls?.stats) {
     const s = bom.walls.stats;
-    const panels = formatPanelSplit(s, { isEstimate: isAreaEstimate });
-    const wallRows = (bom.walls.wallResults ?? [])
-      .map((wr) => {
-        const n = wr.panelCount ?? wr.panels?.length ?? 0;
-        const area = Number(wr.netArea ?? 0);
-        return `<li class="results-wall-row">
-          <span class="results-wall-row__name">${escHtml(wr.wall?.label || 'Стена')}</span>
-          <span class="results-wall-row__area">${area.toFixed(2)} м²</span>
-          <strong class="results-wall-row__panels">${n} пан.</strong>
-        </li>`;
-      })
-      .join('');
+    const pb = panelsBreakdown(s, { areaMode });
+    const meta = areaMode
+      ? `Оценка по площади · ${fmtArea(bom.walls.area)}`
+      : `${esc(bom.walls.mountingLabel || '')} · ${fmtArea(bom.walls.area)}`;
 
-    parts.push(`<section class="results-block">
-      <header class="results-block__head">
-        <h3 class="results-block__title">Стены</h3>
-        <span class="results-block__tag">${isAreaEstimate ? 'оценка' : escHtml(bom.walls.mountingLabel || '')}</span>
-      </header>
-      <div class="results-kpis">
-        ${metricHtml(panels.primary, 'панелей', panels.detail)}
-        ${metricHtml(Number(bom.walls.area || 0).toFixed(2), 'м²')}
-        ${metricHtml(s.dowels?.withReserve ?? 0, 'дюбелей')}
-      </div>
-      ${wallRows ? `<ul class="results-wall-list">${wallRows}</ul>` : ''}
-      ${frameListHtml(bom.walls.frame, 'Каркас стен')}
-    </section>`);
+    const wallRows = (bom.walls.wallResults || []).map((wr) => {
+      const n = wr.panelCount ?? wr.panels?.length ?? 0;
+      const area = wr.netArea;
+      return `
+        <div class="rb-wall">
+          <div class="rb-wall__main">
+            <span class="rb-wall__name">${esc(wr.wall?.label || 'Стена')}</span>
+            <span class="rb-wall__area">${fmtArea(area)}</span>
+          </div>
+          <strong class="rb-wall__panels">${fmtNum(n)}<span class="rb-wall__panels-unit">пан.</span></strong>
+        </div>`;
+    }).join('');
+
+    parts.push(`
+      <section class="rb-block">
+        <header class="rb-block__head">
+          <h3 class="rb-block__title">Стены</h3>
+          <span class="rb-block__meta">${meta}</span>
+        </header>
+        <div class="rb-metric">
+          <div class="rb-metric__value">${pb.primary}<span class="rb-metric__unit">${pb.primaryUnit}</span></div>
+          ${pb.detail ? `<div class="rb-metric__detail">${pb.detail}</div>` : ''}
+        </div>
+        ${wallRows ? `<div class="rb-walls">${wallRows}</div>` : ''}
+        <div class="rb-kv">
+          <span>Дюбели</span>
+          <strong>${fmtNum(s.dowels?.withReserve ?? 0)} шт.</strong>
+        </div>
+        ${renderFrameBlock('Каркас стен', bom.walls.frame)}
+      </section>`);
   }
 
   if (bom.total?.dowelsWithReserve || bom.total?.frame?.items?.length) {
-    parts.push(`<section class="results-block results-block--summary">
-      <header class="results-block__head">
-        <h3 class="results-block__title">Итого по крепежу</h3>
-      </header>
-      <div class="results-kpis">
-        ${bom.total?.dowelsWithReserve ? metricHtml(bom.total.dowelsWithReserve, 'дюбелей') : ''}
-      </div>
-      ${frameListHtml(bom.total?.frame, 'Каркас')}
-    </section>`);
+    parts.push(`
+      <section class="rb-block rb-block--total">
+        <header class="rb-block__head">
+          <h3 class="rb-block__title">Итого по крепежу</h3>
+        </header>
+        ${bom.total?.dowelsWithReserve ? `
+          <div class="rb-kv rb-kv--lg">
+            <span>Дюбели всего</span>
+            <strong>${fmtNum(bom.total.dowelsWithReserve)} шт.</strong>
+          </div>` : ''}
+        ${renderFrameBlock('Каркас всего', bom.total?.frame)}
+      </section>`);
   }
 
-  if (!parts.length) return '';
-  return `<div class="results-report">${parts.join('')}</div>`;
+  return `<div class="rb">${parts.join('')}</div>`;
 }
 
-export function formatResultsText(bom, room, options = {}) {
-  const isAreaEstimate = options.isAreaEstimate
-    ?? (bom?.ceiling?.schemeName === 'По площади');
-  // Текстовый fallback (копирование / отладка)
+/** Текстовый отчёт (PDF / запасной вывод) */
+export function formatResultsText(bom, room, { mode = null } = {}) {
+  const areaMode = isAreaEstimate(bom, mode);
   const lines = [];
-  if (isAreaEstimate) lines.push('Оценка по площади (без раскладки и подрезки)');
 
-  if (bom?.ceiling?.stats) {
+  if (bom.ceiling?.stats) {
     const s = bom.ceiling.stats;
+    const area = s.netArea ?? s.coverageArea ?? bom.ceiling.area;
     lines.push('Потолок');
-    lines.push(`Панели: ${s.panelsToPurchase ?? s.total ?? 0}`);
-    if (!isAreaEstimate && (s.cutPanels ?? 0) > 0) {
-      lines.push(`  из них ${s.fullPanels ?? 0} целых, ${s.cutPanels} с подрезкой`);
+    if (areaMode) {
+      lines.push(`Оценка по площади · ${fmtArea(area)}`);
+      lines.push(`Панелей: ${s.panelsToPurchase ?? s.fullPanels ?? 0}`);
+    } else {
+      lines.push(`${bom.ceiling.schemeName} · ${bom.ceiling.mountingLabel}`);
+      const cut = s.cutPanels ?? 0;
+      lines.push(cut > 0
+        ? `${s.fullPanels ?? 0} целых + ${cut} с подрезкой`
+        : `Панелей: ${s.panelsToPurchase ?? s.fullPanels ?? 0}`);
     }
-    lines.push(`Площадь: ${Number(s.coverageArea ?? s.netArea ?? bom.ceiling.area ?? 0).toFixed(2)} м²`);
     lines.push(`Дюбели: ${s.dowels?.withReserve ?? 0}`);
+    if (bom.ceiling.frame) {
+      lines.push('Каркас потолка:');
+      lines.push(...formatFrameMaterials(bom.ceiling.frame, '  '));
+    }
     lines.push('');
   }
 
-  if (bom?.walls?.stats) {
+  if (bom.walls?.stats) {
     const s = bom.walls.stats;
     lines.push('Стены');
-    lines.push(`Панели: ${s.panelsToPurchase ?? s.total ?? 0}`);
-    if (!isAreaEstimate && (s.cutPanels ?? 0) > 0) {
-      lines.push(`  из них ${s.fullPanels ?? 0} целых, ${s.cutPanels} с подрезкой`);
+    lines.push(areaMode
+      ? `Оценка по площади · ${fmtArea(bom.walls.area)}`
+      : `${bom.walls.mountingLabel} · ${fmtArea(bom.walls.area)}`);
+    const cut = s.cutPanels ?? 0;
+    lines.push((areaMode || cut === 0)
+      ? `Панелей: ${s.panelsToPurchase ?? s.fullPanels ?? 0}`
+      : `${s.fullPanels ?? 0} целых + ${cut} с подрезкой`);
+    if (bom.walls.wallResults?.length) {
+      bom.walls.wallResults.forEach((wr) => {
+        const n = wr.panelCount ?? wr.panels?.length ?? 0;
+        lines.push(`  ${wr.wall.label}: ${n} пан.${wr.netArea != null ? ` (${fmtArea(wr.netArea)})` : ''}`);
+      });
     }
-    lines.push(`Площадь: ${Number(bom.walls.area || 0).toFixed(2)} м²`);
     lines.push(`Дюбели: ${s.dowels?.withReserve ?? 0}`);
-    (bom.walls.wallResults ?? []).forEach((wr) => {
-      const n = wr.panelCount ?? wr.panels?.length ?? 0;
-      lines.push(`  ${wr.wall?.label}: ${Number(wr.netArea || 0).toFixed(2)} м² · ${n} пан.`);
-    });
+    if (bom.walls.frame) {
+      lines.push('Каркас стен:');
+      lines.push(...formatFrameMaterials(bom.walls.frame, '  '));
+    }
     lines.push('');
   }
 
-  if (bom?.total?.dowelsWithReserve) {
+  if (bom.total?.dowelsWithReserve) {
     lines.push(`Дюбели всего: ${bom.total.dowelsWithReserve} шт.`);
+  }
+  if (bom.total?.frame?.items?.length) {
+    lines.push('Каркас итого:');
+    lines.push(...formatFrameMaterials(bom.total.frame, '  '));
   }
 
   return lines.filter((l, i, arr) => !(l === '' && arr[i - 1] === '')).join('\n').trim();
