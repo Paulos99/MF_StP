@@ -184,6 +184,7 @@ export class GuidedTour {
     scrollBlock = 'nearest',
     stepLabel = '',
     forceCard = false,
+    skipScroll = false,
   } = {}) {
     if (!this.active) return;
     const mobile = isMobileLayout();
@@ -206,7 +207,10 @@ export class GuidedTour {
     this._spotlightTarget = el;
     this._spotlightOpts = { pad, radius, aboveFooter };
 
-    if (el?.scrollIntoView) {
+    // Spotlight/card first — grey frame must appear immediately
+    this._position(el, { pad, radius, aboveFooter, sticky: !forceCard });
+
+    if (el?.scrollIntoView && !skipScroll) {
       try {
         el.scrollIntoView({
           behavior: prefersReducedMotion() ? 'auto' : 'smooth',
@@ -214,11 +218,12 @@ export class GuidedTour {
           inline: 'nearest',
         });
         await waitFrames(prefersReducedMotion() ? 40 : 240);
+        // Re-measure after scroll; keep card if still clear
+        this._position(el, { pad, radius, aboveFooter, sticky: true });
       } catch { /* ignore */ }
     }
 
-    this._position(el, { pad, radius, aboveFooter, sticky: !forceCard });
-    await waitFrames(prefersReducedMotion() ? 40 : CARD_MOVE_MS);
+    await waitFrames(prefersReducedMotion() ? 40 : (forceCard ? CARD_MOVE_MS : 180));
   }
 
   /** @deprecated kept for callers; sticky placement replaces hard lock */

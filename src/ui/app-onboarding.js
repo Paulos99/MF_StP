@@ -21,6 +21,8 @@ const DEMO_ROOM = [
 
 const CURSOR_MS = 1450;
 const BEAT = 900;
+/** Faster cursor while tracing the room contour (≈1.5×). */
+const DRAW_CURSOR_MS = Math.round(CURSOR_MS / 1.5);
 
 let appTourApi = null;
 let demoHooks = null;
@@ -89,38 +91,40 @@ async function ensureSidebarForParams() {
     await sleep(320);
   }
   revealSharedOptions();
-  await sleep(100);
+  await sleep(220);
+  // Let open animation / layout settle before measuring spotlight
+  await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
 }
 
 async function drawRoomWithCursor(cursor, editor) {
   if (!editor) return;
   editor.prepareDemoDrawView({ minX: -0.5, minY: -0.5, maxX: 6, maxY: 5 });
-  await sleep(280);
+  await sleep(200);
 
   for (const pt of DEMO_ROOM) {
     throwIfAborted();
     const screen = editor.worldToClient(pt.x, pt.y);
-    await cursor.moveTo(screen, { duration: CURSOR_MS });
-    await sleep(180);
+    await cursor.moveTo(screen, { duration: DRAW_CURSOR_MS });
+    await sleep(90);
     cursor.el?.classList.add('is-pressing');
     cursor.ripple?.classList.remove('is-burst');
     void cursor.ripple?.offsetWidth;
     cursor.ripple?.classList.add('is-burst');
-    await sleep(200);
+    await sleep(120);
     editor.demoTapWorld(pt.x, pt.y);
-    await sleep(320);
+    await sleep(160);
     cursor.el?.classList.remove('is-pressing');
   }
 
   throwIfAborted();
   const start = DEMO_ROOM[0];
-  await cursor.moveTo(editor.worldToClient(start.x, start.y), { duration: CURSOR_MS });
-  await sleep(180);
+  await cursor.moveTo(editor.worldToClient(start.x, start.y), { duration: DRAW_CURSOR_MS });
+  await sleep(90);
   cursor.el?.classList.add('is-pressing');
   cursor.ripple?.classList.add('is-burst');
-  await sleep(200);
+  await sleep(120);
   editor.demoTapWorld(start.x, start.y);
-  await sleep(280);
+  await sleep(160);
   cursor.el?.classList.remove('is-pressing');
 
   await sleep(BEAT);
@@ -235,28 +239,48 @@ async function demoOpenings(cursor, tour) {
 async function demoSurfaces(cursor, tour) {
   await ensureSidebarForParams();
 
+  const block = $('#sharedCalcOptions');
+  if (block) {
+    try {
+      block.scrollIntoView({ behavior: 'auto', block: 'center', inline: 'nearest' });
+    } catch { /* ignore */ }
+    await sleep(120);
+  }
+
+  // Grey frame immediately, no scroll race with cursor
   await narrate(tour, {
     title: 'Что считать',
     text: 'Снимаем лишние стены — оставляем потолок и две стены.',
-    target: '#sharedCalcOptions',
+    target: block || '#sharedCalcOptions',
     scrollBlock: 'center',
     stepLabel: '5 / 8',
     pad: 12,
     radius: 14,
     forceCard: true,
+    skipScroll: true,
   });
 
+  const localMs = Math.round(CURSOR_MS * 0.55);
   const deselect = $('#deselectAllWallsBtn');
+
+  // One approach move into the block, then short hops between chips
+  if (deselect || block) {
+    await cursor.moveTo(deselect || block, { duration: Math.round(CURSOR_MS * 0.8) });
+    await sleep(220);
+  }
+
   if (deselect) {
-    await cursor.click(deselect, { duration: CURSOR_MS });
-    await sleep(BEAT);
+    await cursor.click(deselect, { duration: localMs });
+    await sleep(480);
+    // Keep same frame; only re-measure size after chips reflow
+    tour.refreshSpotlight(block || '#sharedCalcOptions', { pad: 12, radius: 14, sticky: true });
   }
 
   const ceilingLabel = $('#calcCeiling')?.closest('label');
   const ceiling = $('#calcCeiling');
   if (ceiling && !ceiling.checked && ceilingLabel) {
-    await cursor.click(ceilingLabel, { duration: CURSOR_MS });
-    await sleep(520);
+    await cursor.click(ceilingLabel, { duration: localMs });
+    await sleep(400);
   }
 
   const wallLabels = $$('#wallSurfacesList label.surface-chip')
@@ -265,8 +289,8 @@ async function demoSurfaces(cursor, tour) {
     throwIfAborted();
     const input = lab.querySelector('input[type="checkbox"]');
     if (input?.checked) continue;
-    await cursor.click(lab, { duration: CURSOR_MS });
-    await sleep(520);
+    await cursor.click(lab, { duration: localMs });
+    await sleep(400);
   }
 
   demoHooks?.runCalculation?.({ silent: true });
@@ -277,7 +301,8 @@ async function demoSurfaces(cursor, tour) {
     text: 'В расчёте только выбранные поверхности.',
     stepLabel: '5 / 8',
   });
-  tour.refreshSpotlight('#sharedCalcOptions', { pad: 12, radius: 14 });
+  // Do not move card — only keep spotlight locked on the options block
+  tour.refreshSpotlight(block || '#sharedCalcOptions', { pad: 12, radius: 14, sticky: true });
   await sleep(BEAT);
 }
 
