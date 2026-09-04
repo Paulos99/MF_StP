@@ -3509,6 +3509,11 @@ body {
 .app-header__text {
     text-align: center;
     font-family: 'Manrope', system-ui, sans-serif;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 14px;
+    flex-wrap: wrap;
 }
 
 .app-header__text h1 {
@@ -5793,7 +5798,7 @@ body.theme-dark .results-preview__fade {
 
     .app-header {
         margin: 6px 6px 0;
-        padding: 10px 12px 10px 62px;
+        padding: 10px 48px 10px 62px;
         min-height: 56px;
         border-radius: 12px;
     }
@@ -5805,6 +5810,10 @@ body.theme-dark .results-preview__fade {
 
     .app-header__text h1 {
         font-size: 0.98rem;
+    }
+
+    .app-header__brand-logo {
+        height: 18px;
     }
 
     .app-header__subtitle {
@@ -5901,6 +5910,11 @@ body.theme-dark .results-preview__fade {
     text-align: center;
     font-family: 'Manrope', system-ui, sans-serif;
     max-width: min(720px, 100%);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 14px;
+    flex-wrap: wrap;
 }
 
 .app-header__text h1 {
@@ -5909,6 +5923,14 @@ body.theme-dark .results-preview__fade {
     font-weight: 800;
     letter-spacing: -0.03em;
     line-height: 1.15;
+}
+
+.app-header__brand-logo {
+    height: clamp(26px, 3.2vw, 34px);
+    width: auto;
+    object-fit: contain;
+    display: block;
+    flex-shrink: 0;
 }
 
 .app-header__title-soft {
@@ -5926,7 +5948,7 @@ body.theme-dark .results-preview__fade {
 @media (max-width: 720px) {
     .app-header {
         margin: 8px 8px 0;
-        padding: 12px 16px 12px 70px;
+        padding: 12px 52px 12px 70px;
         min-height: 64px;
         border-radius: 14px;
         justify-content: flex-start;
@@ -5940,11 +5962,17 @@ body.theme-dark .results-preview__fade {
 
     .app-header__text {
         text-align: left;
+        justify-content: flex-start;
         max-width: none;
+        gap: 10px;
     }
 
     .app-header__text h1 {
         font-size: 1.05rem;
+    }
+
+    .app-header__brand-logo {
+        height: 22px;
     }
 
     .app-header__subtitle {
