@@ -343,8 +343,20 @@
           </div>
         </div>
 
-        <aside class="workspace-results" id="resultsAside" hidden>
+        <aside class="workspace-results" id="resultsAside">
           <div class="workspace-results__scroll">
+            <div class="results-card card is-expanded">
+              <div class="results-header">
+                <h2>Результаты</h2>
+                <button type="button" class="btn-share-compact" id="shareBtn" hidden aria-hidden="true"></button>
+                <button type="button" class="btn-link results-collapse-btn" id="resultsCollapseBtn" hidden></button>
+                <button type="button" class="btn-link secondary-results-toggle" id="resultsExpandBtn" hidden></button>
+              </div>
+              <div class="results-preview" id="resultsPreview">
+                <div id="resultsText" class="results-text">Выберите способ расчёта слева — здесь появятся детали.</div>
+              </div>
+            </div>
+
             <div class="workspace-results__actions">
               <button type="button" class="btn btn-primary workspace-results__btn" id="downloadBtn" disabled>
                 <svg class="btn-print-arrow" width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
@@ -356,18 +368,6 @@
               <button type="button" class="btn btn-secondary workspace-results__btn" id="shareBtnSecondary" title="Скопировать ссылку на расчёт">
                 Поделиться
               </button>
-            </div>
-
-            <div class="results-card card is-expanded">
-              <div class="results-header">
-                <h2>Подробности</h2>
-                <button type="button" class="btn-share-compact" id="shareBtn" hidden aria-hidden="true"></button>
-                <button type="button" class="btn-link results-collapse-btn" id="resultsCollapseBtn" hidden></button>
-                <button type="button" class="btn-link secondary-results-toggle" id="resultsExpandBtn" hidden></button>
-              </div>
-              <div class="results-preview" id="resultsPreview">
-                <div id="resultsText" class="results-text">Выполните расчёт — здесь появятся детали.</div>
-              </div>
             </div>
           </div>
         </aside>

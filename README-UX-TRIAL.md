@@ -18,10 +18,10 @@ npm run dev
 Без Node (достаточно Python):
 
 ```bash
-py -m http.server 5173
+py -m http.server 5180 --bind 127.0.0.1
 ```
 
-Откройте: http://localhost:5173/
+Откройте: http://127.0.0.1:5180/
 
 ## Что меняется в UX
 

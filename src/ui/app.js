@@ -277,11 +277,12 @@ function syncChromeUi() {
   const resultsAside = $('resultsAside');
   const stats = document.querySelector('.workspace-stats');
 
-  if (resultsAside) resultsAside.hidden = !ready;
+  // Правая колонка всегда на месте
+  if (resultsAside) resultsAside.hidden = false;
   if (stats) stats.classList.toggle('is-idle', !ready);
 
-  $('downloadBtn')?.toggleAttribute('disabled', !ready);
   if ($('downloadBtn')) $('downloadBtn').disabled = !ready;
+  if ($('shareBtnSecondary')) $('shareBtnSecondary').disabled = !ready;
 
   // В draw до замкнутого контура — только высота/фото, без «что считать»
   const shared = $('sharedCalcOptions');
@@ -296,7 +297,7 @@ function syncChromeUi() {
   );
 
   document.querySelector('.theme-toggle__label')?.toggleAttribute('hidden', !mode);
-  document.body.classList.toggle('has-results-aside', ready && !isMobileLayout());
+  document.body.classList.add('has-results-aside');
 }
 
 function clearResultsUi(message = '') {
@@ -732,7 +733,7 @@ function updateResultsPreview() {
   preview.style.maxHeight = 'none';
 
   if (!state.hasResults) {
-    textEl.textContent = 'Выполните расчёт — здесь появятся детали.';
+    textEl.textContent = 'Выберите способ расчёта слева — здесь появятся детали.';
   }
 }
 

@@ -5934,13 +5934,13 @@ body.theme-dark .entry-card__title {
 @media (min-width: 900px) {
   .workspace {
     display: grid;
-    grid-template-columns: 280px minmax(0, 1fr);
+    grid-template-columns: 308px minmax(0, 1fr) 300px;
     gap: 14px;
     align-items: stretch;
   }
 
   body.has-results-aside .workspace {
-    grid-template-columns: 280px minmax(0, 1fr) 300px;
+    grid-template-columns: 308px minmax(0, 1fr) 300px;
   }
 
   .workspace-sidebar {
@@ -5967,14 +5967,14 @@ body.theme-dark .entry-card__title {
   }
 
   .workspace-results[hidden] {
-    display: none !important;
+    display: flex !important;
   }
 }
 
 .workspace-results__scroll {
   flex: 1;
   min-height: 0;
-  overflow-y: auto;
+  overflow: hidden;
   padding: 12px;
   display: flex;
   flex-direction: column;
@@ -5986,6 +5986,8 @@ body.theme-dark .entry-card__title {
   flex-direction: column;
   gap: 8px;
   flex-shrink: 0;
+  margin-top: auto;
+  padding-top: 4px;
 }
 
 .workspace-results__btn {
@@ -6004,6 +6006,7 @@ body.theme-dark .entry-card__title {
   margin: 0;
   box-shadow: none;
   border: 1px solid rgba(1, 100, 79, 0.1);
+  overflow: hidden;
 }
 
 .workspace-results .results-header {
@@ -6040,7 +6043,7 @@ body.theme-dark .entry-card__title {
   }
 
   .workspace-results[hidden] {
-    display: none !important;
+    display: block !important;
   }
 }
 
