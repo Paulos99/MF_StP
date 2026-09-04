@@ -54,7 +54,7 @@ export class CeilingVisualizer {
     const b = getBounds(local);
     const width = b.maxX - b.minX;
     const height = b.maxY - b.minY;
-    const isMobile = window.matchMedia?.('(max-width: 768px)').matches;
+    const isMobile = window.matchMedia?.('(max-width: 899px)').matches;
     const maxW = isMobile ? 360 : 700;
     const maxH = isMobile ? 360 : 500;
     const pad = 80;

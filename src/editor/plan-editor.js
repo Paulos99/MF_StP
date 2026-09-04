@@ -143,10 +143,11 @@ export class PlanEditor {
     return Math.hypot(px - (x1 + t * dx), py - (y1 + t * dy));
   }
 
-  hitTestOpening(cx, cy, threshold = 22) {
+  hitTestOpening(cx, cy, threshold) {
     if (!this.room) return null;
+    const hit = threshold ?? this._wallHitThreshold();
     let best = null;
-    let bestDist = threshold;
+    let bestDist = hit;
     for (const opening of this.room.openings) {
       const wall = this.room.walls.find((w) => w.id === opening.wallId);
       if (!wall) continue;
@@ -166,6 +167,15 @@ export class PlanEditor {
     return best;
   }
 
+  _isCoarsePointer() {
+    return window.matchMedia?.('(pointer: coarse)')?.matches
+      || (typeof navigator !== 'undefined' && navigator.maxTouchPoints > 1);
+  }
+
+  _wallHitThreshold() {
+    return this._isCoarsePointer() ? 28 : 22;
+  }
+
   clampOpeningOffset(opening, wall, offset) {
     const max = Math.max(0, wall.length - opening.width);
     return Math.max(0, Math.min(max, offset));
@@ -180,6 +190,7 @@ export class PlanEditor {
     const rect = this.canvas.getBoundingClientRect();
     const cx = e.clientX - rect.left;
     const cy = e.clientY - rect.top;
+    const wallHit = this._wallHitThreshold();
 
     if (this.interactiveOpenings) {
       const hit = this.hitTestOpening(cx, cy);
@@ -202,7 +213,7 @@ export class PlanEditor {
     for (const wall of this.room.walls) {
       const { x1, y1, x2, y2 } = this.wallToCanvas(wall);
       const dist = this.pointToSegmentDistance(cx, cy, x1, y1, x2, y2);
-      if (dist < 22) {
+      if (dist < wallHit) {
         this.selectedWallId = wall.id;
         this.selectedOpeningId = null;
         this.onWallSelect?.(wall.id);

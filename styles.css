@@ -61,7 +61,7 @@ div:focus:not([contenteditable="true"]):not(input):not(textarea) {
 }
 
 /* Оптимизация для мобильных устройств */
-@media (max-width: 768px) {
+@media (max-width: 899px) {
     *,
     *::before,
     *::after {
@@ -2087,7 +2087,7 @@ body.sketch-modal-open {
     left: 12px;
     display: flex;
     align-items: center;
-    gap: 4px;
+    gap: var(--touch-gap, 8px);
     padding: 6px;
     background: rgba(255, 255, 255, 0.96);
     border-radius: 999px;
@@ -2102,7 +2102,7 @@ body.sketch-modal-open {
     right: 12px;
     display: flex;
     align-items: center;
-    gap: 2px;
+    gap: 4px;
     padding: 4px 6px;
     background: rgba(255, 255, 255, 0.96);
     border-radius: 999px;
@@ -2581,6 +2581,251 @@ body.sketch-modal-open {
     border-radius: 8px;
 }
 
+/* —— Guided tour (spotlight onboarding) —— */
+.tour-root {
+    position: fixed;
+    inset: 0;
+    z-index: 2400;
+    pointer-events: none;
+}
+
+.tour-root[hidden] {
+    display: none !important;
+}
+
+.tour-spotlight {
+    position: fixed;
+    pointer-events: none;
+    box-shadow: 0 0 0 9999px rgba(32, 36, 40, 0.72);
+    border: 2px solid rgba(1, 100, 79, 0.85);
+    background: transparent;
+    transition: top 280ms var(--ease-out), left 280ms var(--ease-out),
+      width 280ms var(--ease-out), height 280ms var(--ease-out),
+      border-radius 280ms var(--ease-out);
+    z-index: 1;
+    animation: tour-pulse 1.8s var(--ease-out) infinite;
+}
+
+.tour-spotlight.is-hidden {
+    opacity: 0;
+    box-shadow: 0 0 0 9999px rgba(32, 36, 40, 0.55);
+    border-color: transparent;
+    animation: none;
+}
+
+@keyframes tour-pulse {
+    0%, 100% { box-shadow: 0 0 0 9999px rgba(32, 36, 40, 0.72), 0 0 0 0 rgba(1, 100, 79, 0.35); }
+    50% { box-shadow: 0 0 0 9999px rgba(32, 36, 40, 0.72), 0 0 0 6px rgba(1, 100, 79, 0.18); }
+}
+
+.tour-card {
+    position: fixed;
+    z-index: 2;
+    pointer-events: auto;
+    width: min(360px, calc(100vw - 32px));
+    background: #fff;
+    color: var(--text-primary);
+    border-radius: var(--radius-md);
+    padding: 18px 18px 14px;
+    box-shadow: 0 12px 40px rgba(17, 24, 39, 0.22);
+    font-family: 'Manrope', system-ui, sans-serif;
+    animation: tour-card-in 280ms var(--ease-out);
+}
+
+@keyframes tour-card-in {
+    from { opacity: 0; transform: translateY(8px); }
+    to { opacity: 1; transform: none; }
+}
+
+.tour-title {
+    margin: 0 0 6px;
+    font-size: 1.05rem;
+    font-weight: 800;
+    letter-spacing: -0.02em;
+    line-height: 1.25;
+}
+
+.tour-text {
+    margin: 0 0 14px;
+    font-size: 0.9rem;
+    line-height: 1.45;
+    color: var(--text-secondary);
+}
+
+.tour-nav {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 8px;
+}
+
+.tour-step {
+    flex: 1;
+    text-align: center;
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+    font-weight: 600;
+}
+
+.tour-btn {
+    min-height: var(--touch-min);
+    min-width: var(--touch-min);
+    padding: 0 14px;
+    border-radius: 999px;
+    border: 1px solid var(--border-color);
+    background: #fff;
+    font-family: inherit;
+    font-size: 0.9rem;
+    font-weight: 700;
+    cursor: pointer;
+    color: var(--accent-color);
+    transition: background 0.15s, box-shadow 0.15s;
+}
+
+.tour-btn:disabled {
+    opacity: 0.35;
+    cursor: not-allowed;
+}
+
+.tour-btn--primary {
+    background: var(--accent-color);
+    border-color: var(--accent-color);
+    color: #fff;
+}
+
+.tour-btn--primary:hover:not(:disabled) {
+    background: var(--accent-hover);
+}
+
+.tour-btn--ghost:hover:not(:disabled) {
+    background: var(--bg-subtle);
+}
+
+.tour-skip {
+    display: block;
+    width: 100%;
+    margin: 0;
+    padding: 8px;
+    border: none;
+    background: transparent;
+    color: var(--text-secondary);
+    font-family: inherit;
+    font-size: 0.85rem;
+    font-weight: 600;
+    cursor: pointer;
+    text-decoration: underline;
+    text-underline-offset: 2px;
+    min-height: 36px;
+}
+
+.tour-skip:hover {
+    color: var(--accent-color);
+}
+
+.app-header__help {
+    position: absolute;
+    right: 16px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 40px;
+    height: 40px;
+    min-width: var(--touch-min);
+    min-height: var(--touch-min);
+    border-radius: 50%;
+    border: 1.5px solid rgba(255, 255, 255, 0.55);
+    background: rgba(255, 255, 255, 0.14);
+    color: #fff;
+    font-family: 'Manrope', system-ui, sans-serif;
+    font-size: 1.15rem;
+    font-weight: 800;
+    line-height: 1;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.15s, border-color 0.15s, transform 0.15s;
+    z-index: 2;
+}
+
+.app-header__help:hover {
+    background: rgba(255, 255, 255, 0.28);
+    border-color: rgba(255, 255, 255, 0.9);
+}
+
+.app-header__help:active {
+    transform: translateY(-50%) scale(0.96);
+}
+
+@media (max-width: 899px) {
+    .tour-card--sheet {
+        left: 0 !important;
+        right: 0 !important;
+        bottom: 0 !important;
+        top: auto !important;
+        width: 100% !important;
+        max-width: none;
+        border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+        padding: 16px 16px calc(12px + var(--safe-bottom));
+        box-shadow: 0 -8px 32px rgba(17, 24, 39, 0.2);
+        transform: none !important;
+        animation: tour-sheet-in 300ms var(--ease-out);
+    }
+
+    .tour-card--sheet.tour-card--above-footer {
+        bottom: calc(var(--mobile-footer-h) + var(--safe-bottom)) !important;
+        padding-bottom: 12px;
+        border-radius: var(--radius-lg);
+        margin: 0 8px 8px;
+        width: calc(100% - 16px) !important;
+        left: 8px !important;
+        right: 8px !important;
+    }
+
+    .tour-title {
+        font-size: 1.1rem;
+    }
+
+    .tour-text {
+        font-size: 0.95rem;
+    }
+
+    .app-header__help {
+        right: 10px;
+        width: var(--touch-min);
+        height: var(--touch-min);
+    }
+}
+
+@keyframes tour-sheet-in {
+    from { opacity: 0; transform: translateY(16px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .tour-spotlight,
+    .tour-card,
+    .tour-card--sheet {
+        transition: none !important;
+        animation: none !important;
+    }
+}
+
+body.theme-dark .tour-card {
+    background: var(--bg-card);
+    color: var(--text-primary);
+    border: 1px solid var(--border-color);
+}
+
+body.theme-dark .tour-text {
+    color: var(--text-secondary);
+}
+
+body.theme-dark .tour-btn--ghost {
+    background: var(--bg-subtle);
+    border-color: var(--border-color);
+    color: var(--accent-color);
+}
+
 /* Step 1 plan */
 .plan-stats {
     font-size: 14px;
@@ -2989,7 +3234,7 @@ body.sketch-modal-open {
     flex-shrink: 0;
 }
 
-@media (max-width: 768px) {
+@media (max-width: 899px) {
     .step3-workspace {
         grid-template-columns: 1fr;
     }
@@ -3059,12 +3304,23 @@ body.sketch-modal-open {
     .sketch-float-toolbar {
         top: 8px;
         left: 8px;
-        padding: 4px;
+        padding: 6px;
+        gap: var(--touch-gap);
     }
 
     .sketch-float-zoom {
-        bottom: 8px;
+        bottom: calc(8px + var(--safe-bottom));
         right: 8px;
+        gap: 4px;
+        padding: 6px;
+    }
+
+    .sketch-float-toolbar .sketch-tool-btn,
+    .sketch-float-zoom .sketch-tool-btn {
+        width: var(--touch-min);
+        height: var(--touch-min);
+        min-width: var(--touch-min);
+        min-height: var(--touch-min);
     }
 
     .sketch-hint-bar {
@@ -3079,14 +3335,42 @@ body.sketch-modal-open {
 
     #sketchKeypadHost {
         right: 8px;
-        bottom: 80px;
+        left: auto;
+        bottom: calc(var(--mobile-footer-h) + var(--safe-bottom) + 8px);
         top: auto;
         transform: none;
     }
 
-    .sketch-keypad {
-        width: 160px;
+    #sketchKeypadHost:not([hidden]) {
+        animation: keypadInMobile var(--duration-normal) var(--ease-out);
     }
+
+    .sketch-canvas-wrap:has(#sketchKeypadHost:not([hidden])) .sketch-float-zoom {
+        opacity: 0;
+        pointer-events: none;
+        visibility: hidden;
+    }
+
+    .sketch-keypad {
+        width: min(200px, calc(100vw - 24px));
+    }
+
+    .sketch-keypad__key {
+        min-height: var(--touch-min);
+        height: var(--touch-min);
+        font-size: 16px;
+    }
+
+    .workspace-sidebar input[type="number"],
+    .workspace-sidebar input[type="text"],
+    .workspace-sidebar select {
+        font-size: 16px;
+    }
+}
+
+@keyframes keypadInMobile {
+    from { opacity: 0; transform: translateY(8px); }
+    to { opacity: 1; transform: translateY(0); }
 }
 
 /* === App shell (single-page layout) === */
@@ -3976,7 +4260,7 @@ body {
     to { opacity: 1; }
 }
 
-@media (min-width: 769px) {
+@media (min-width: 900px) {
     .sketch-openings-modal {
         align-items: center;
     }
@@ -3991,12 +4275,6 @@ body {
     @keyframes scaleIn {
         from { opacity: 0; transform: scale(0.96); }
         to { opacity: 1; transform: scale(1); }
-    }
-}
-
-@media (max-width: 768px) {
-    .sketch-openings-modal__workspace {
-        grid-template-columns: 1fr;
     }
 }
 
@@ -4023,7 +4301,7 @@ body {
 
     .sketch-openings-modal__workspace {
         grid-template-columns: 1fr;
-        grid-template-rows: minmax(88px, 18vh) minmax(0, 1fr);
+        grid-template-rows: minmax(72px, 15vh) minmax(0, 1fr);
         gap: 8px;
         min-height: 0;
         flex: 1 1 auto;
@@ -4053,7 +4331,7 @@ body {
 
     .sketch-elevation-wrap {
         flex: 1 1 auto;
-        min-height: 120px;
+        min-height: 140px;
         max-height: none;
         height: auto;
         overflow: hidden;
@@ -4079,7 +4357,7 @@ body {
         overflow-y: auto;
         -webkit-overflow-scrolling: touch;
         grid-template-columns: 1fr 1fr;
-        gap: 8px;
+        gap: var(--touch-gap);
         padding: 10px;
         border-radius: 12px;
         box-shadow: none;
@@ -4087,7 +4365,7 @@ body {
     }
 
     .sketch-opening-props input {
-        min-height: 40px;
+        min-height: var(--touch-min);
         font-size: 16px;
         padding: 8px 10px;
     }
@@ -4097,7 +4375,7 @@ body {
     }
 
     .sketch-openings-actions--toolbar .sketch-add-btn {
-        min-height: 44px;
+        min-height: var(--touch-min);
         padding: 10px 12px;
         font-size: 14px;
         font-weight: 700;
@@ -4114,12 +4392,12 @@ body {
 
     .sketch-wall-chip {
         flex: 0 0 auto;
-        min-height: 40px;
-        padding: 8px 12px;
+        min-height: var(--touch-min);
+        padding: 8px 14px;
     }
 
     .sketch-openings-modal__foot {
-        padding: 10px 12px calc(10px + env(safe-area-inset-bottom));
+        padding: 10px 12px calc(10px + var(--safe-bottom));
         flex-shrink: 0;
     }
 
@@ -4784,14 +5062,14 @@ body.theme-dark .results-tabs--underline .tab-btn.active {
     }
 
     .app-main {
-        padding-bottom: 72px;
+        padding-bottom: calc(var(--mobile-footer-h) + var(--safe-bottom));
     }
 
     .mobile-toolbar .app-footer__inner {
         display: flex;
         align-items: stretch;
         gap: 0;
-        padding: 8px 10px calc(8px + env(safe-area-inset-bottom));
+        padding: 8px 10px calc(8px + var(--safe-bottom));
     }
 
     .btn-mobile-params {
@@ -4824,7 +5102,7 @@ body.theme-dark .results-tabs--underline .tab-btn.active {
     right: 0;
     background: var(--bg-card);
     border-radius: var(--radius-lg) var(--radius-lg) 0 0;
-    padding: 8px 8px calc(8px + env(safe-area-inset-bottom));
+    padding: 8px 8px calc(8px + var(--safe-bottom));
 }
 
 .mobile-action-sheet__item {
@@ -5296,14 +5574,14 @@ body.theme-dark .results-preview__fade {
 
     .scheme-card {
         flex: 1 1 auto;
-        min-height: min(68dvh, 620px);
+        min-height: min(70dvh, 680px);
         display: flex;
         flex-direction: column;
     }
 
     .scheme-card .canvas-stage {
         flex: 1;
-        min-height: 52dvh;
+        min-height: 58dvh;
     }
 
     .scheme-header__titles h2 {
@@ -5329,25 +5607,24 @@ body.theme-dark .results-preview__fade {
     }
 
     .sketch-float-zoom .canvas-checkbox {
-        font-size: 11px;
-        gap: 3px;
+        font-size: 12px;
+        gap: 4px;
         white-space: nowrap;
+        min-height: var(--touch-min);
+        align-items: center;
+        padding: 0 4px;
     }
 
     .sketch-hint-bar--inline {
-        padding: 4px 8px;
+        padding: 6px 10px;
         font-size: 12px;
         min-height: 0;
     }
 
-    .sketch-float-toolbar {
-        transform: scale(0.92);
-        transform-origin: top left;
-    }
-
+    /* No scale — keeps 44px touch targets accurate */
+    .sketch-float-toolbar,
     .sketch-float-zoom {
-        transform: scale(0.92);
-        transform-origin: bottom right;
+        transform: none;
     }
 
     .workspace-stats {
@@ -5384,12 +5661,67 @@ body.theme-dark .results-preview__fade {
     body.mobile-sidebar-open .workspace-sidebar {
         display: flex;
         position: fixed;
-        inset: 0 0 64px 0;
+        inset: 0 0 calc(var(--mobile-footer-h) + var(--safe-bottom)) 0;
         z-index: 80;
         width: auto;
         max-width: none;
         background: var(--bg-page);
         padding: 12px;
+    }
+}
+
+@media (max-width: 399px) {
+    .sketch-float-toolbar {
+        max-width: calc(100% - 16px);
+        flex-wrap: wrap;
+        border-radius: 16px;
+    }
+
+    .sketch-float-toolbar .sketch-tool-btn--text {
+        font-size: 12px;
+        padding: 0 8px;
+    }
+}
+
+/* Phone: maximize canvas */
+@media (max-width: 599px) {
+    .scheme-card {
+        min-height: min(72dvh, 640px);
+    }
+
+    .scheme-card .canvas-stage {
+        min-height: 60dvh;
+    }
+
+    .app-header {
+        margin: 6px 6px 0;
+        padding: 10px 12px 10px 62px;
+        min-height: 56px;
+        border-radius: 12px;
+    }
+
+    .app-header__logo {
+        left: 10px;
+        height: 36px;
+    }
+
+    .app-header__text h1 {
+        font-size: 0.98rem;
+    }
+
+    .app-header__subtitle {
+        font-size: 0.65rem;
+    }
+}
+
+/* Tablet portrait / large phones */
+@media (min-width: 600px) and (max-width: 899px) {
+    .scheme-card {
+        min-height: min(68dvh, 720px);
+    }
+
+    .scheme-card .canvas-stage {
+        min-height: 56dvh;
     }
 }
 

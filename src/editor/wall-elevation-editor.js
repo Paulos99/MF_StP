@@ -212,7 +212,7 @@ export class WallElevationEditor {
       this.ctx.strokeRect(box.x, box.y, box.w, box.h);
 
       if (active) {
-        const handleR = 10;
+        const handleR = this._isCoarsePointer() ? 14 : 10;
         this.ctx.fillStyle = '#fff';
         this.ctx.strokeStyle = ACCENT;
         this.ctx.lineWidth = 2;
@@ -264,7 +264,7 @@ export class WallElevationEditor {
     const wall = this.getWall();
     if (!wall || !this.room || !this._layout) return null;
     const { ox, oy, s, wh } = this._layout;
-    const pad = 12;
+    const pad = this._isCoarsePointer() ? 20 : 12;
     let best = null;
     for (const o of this.room.getOpeningsForWall(wall.id)) {
       const box = this._openingBox(o, ox, oy, s, wh);
@@ -278,6 +278,11 @@ export class WallElevationEditor {
       }
     }
     return best;
+  }
+
+  _isCoarsePointer() {
+    return window.matchMedia?.('(pointer: coarse)')?.matches
+      || (typeof navigator !== 'undefined' && navigator.maxTouchPoints > 1);
   }
 
   _touchDistance(t0, t1) {
