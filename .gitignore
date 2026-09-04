@@ -1,0 +1,16 @@
+# Dependencies
+node_modules/
+
+# Build
+dist/
+
+# Temp
+_mounting_*.txt
+_pdf_extract.txt
+
+# Backups
+*.bak
+
+# OS
+.DS_Store
+Thumbs.db

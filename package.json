@@ -1,0 +1,17 @@
+{
+  "name": "multiframe-calculator",
+  "private": true,
+  "version": "2.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "build:esbuild": "node scripts/build-esbuild.mjs",
+    "preview": "vite preview"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "esbuild": "^0.24.0",
+    "vite": "^5.4.11"
+  }
+}
