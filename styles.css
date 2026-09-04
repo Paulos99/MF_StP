@@ -2634,8 +2634,8 @@ body.tour-demo-playing .tour-spotlight {
     padding: 18px 18px 14px;
     box-shadow: 0 12px 40px rgba(17, 24, 39, 0.22);
     font-family: 'Manrope', system-ui, sans-serif;
-    transition: left 0.48s var(--ease-out), top 0.48s var(--ease-out),
-      width 0.35s var(--ease-out), opacity 0.28s ease, transform 0.28s var(--ease-out);
+    transition: left 0.65s cubic-bezier(0.22, 1, 0.36, 1), top 0.65s cubic-bezier(0.22, 1, 0.36, 1),
+      width 0.4s ease, opacity 0.28s ease, transform 0.28s var(--ease-out);
     will-change: left, top;
 }
 

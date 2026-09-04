@@ -149,7 +149,7 @@ async function demoOpenings(cursor, tour) {
     target: wallsBtn || openingsBtn || '.scheme-card',
     radius: 12,
     stepLabel: '4 / 8',
-    lockCard: true,
+    forceCard: true,
   });
 
   // 1) Switch to walls view so the mode change is visible
@@ -230,7 +230,6 @@ async function demoOpenings(cursor, tour) {
   demoHooks?.setSchemeView?.('walls');
   await sleep(BEAT);
   tour.refreshSpotlight('.scheme-card', { radius: 12 });
-  tour.unlockCard();
 }
 
 async function demoSurfaces(cursor, tour) {
@@ -244,7 +243,7 @@ async function demoSurfaces(cursor, tour) {
     stepLabel: '5 / 8',
     pad: 12,
     radius: 14,
-    lockCard: true,
+    forceCard: true,
   });
 
   const deselect = $('#deselectAllWallsBtn');
@@ -280,7 +279,6 @@ async function demoSurfaces(cursor, tour) {
   });
   tour.refreshSpotlight('#sharedCalcOptions', { pad: 12, radius: 14 });
   await sleep(BEAT);
-  tour.unlockCard();
 }
 
 function stepLabel(i, total) {
@@ -299,9 +297,10 @@ function buildSteps() {
           target: '.app-header',
           radius: 16,
           stepLabel: stepLabel(1, total),
+          forceCard: true,
         });
         await cursor.moveTo($('#appHelpBtn') || $('.app-header'), { duration: CURSOR_MS });
-        await sleep(200);
+        await sleep(BEAT * 0.4);
       },
     },
     {
@@ -316,6 +315,7 @@ function buildSteps() {
             aboveFooter: true,
             radius: 14,
             stepLabel: stepLabel(2, total),
+            forceCard: true,
           });
           await cursor.click($('#mobileParamsBtn'), { duration: CURSOR_MS });
           await sleep(280);
@@ -327,6 +327,7 @@ function buildSteps() {
           textMobile: 'Выбираем «Нарисовать схему».',
           target: '#entryDrawBtn',
           stepLabel: stepLabel(2, total),
+          forceCard: true,
         });
 
         if (demoHooks?.getInputMode?.() !== 'draw') {
@@ -350,7 +351,7 @@ function buildSteps() {
           text: 'Курсор рисует комнату по сетке 1 м. После замыкания сразу появляется раскладка панелей.',
           target: '#sketchCanvas',
           stepLabel: stepLabel(3, total),
-          lockCard: true,
+          forceCard: true,
         });
         const editor = demoHooks?.getSketchEditor?.();
         await drawRoomWithCursor(cursor, editor);
@@ -362,7 +363,6 @@ function buildSteps() {
         tour.refreshSpotlight('.scheme-card', { radius: 12 });
         await cursor.moveTo($('.scheme-card') || { x: window.innerWidth * 0.5, y: window.innerHeight * 0.42 }, { duration: CURSOR_MS });
         await sleep(BEAT);
-        tour.unlockCard();
       },
     },
     {
@@ -389,6 +389,7 @@ function buildSteps() {
           text: 'Детальный список материалов и выгрузка в PDF — для клиента или прораба.',
           target: '#resultsAside',
           stepLabel: stepLabel(6, total),
+          forceCard: true,
         });
         const aside = $('#resultsAside');
         if (aside) await cursor.moveTo(aside, { duration: CURSOR_MS });
@@ -411,6 +412,7 @@ function buildSteps() {
           target: buy || '.workspace-stats',
           radius: 14,
           stepLabel: stepLabel(7, total),
+          forceCard: true,
         });
         if (buy) {
           await cursor.moveTo(buy, { duration: CURSOR_MS });
@@ -429,6 +431,7 @@ function buildSteps() {
           target: '#appHelpBtn',
           radius: 22,
           stepLabel: stepLabel(8, total),
+          forceCard: true,
         });
         const help = $('#appHelpBtn');
         if (help) await cursor.moveTo(help, { duration: CURSOR_MS });
@@ -477,7 +480,6 @@ async function runDemo(tour) {
       throwIfAborted();
       const step = STEPS[i];
       const isLast = i === STEPS.length - 1;
-      tour.unlockCard?.();
       tour.nextBtn.textContent = isLast ? 'Готово' : 'Далее';
       tour.nextBtn.disabled = true;
 

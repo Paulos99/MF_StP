@@ -1,7 +1,8 @@
 const MOBILE_MQ = '(max-width: 899px)';
 const SPOTLIGHT_PAD = 10;
 const LAYOUT_WAIT_MS = 80;
-const CARD_MOVE_MS = 480;
+const CARD_MOVE_MS = 620;
+const CARD_STICKY_SLACK = 12;
 
 let activeTour = null;
 
@@ -19,6 +20,19 @@ function waitFrames(ms = LAYOUT_WAIT_MS) {
       setTimeout(resolve, ms);
     });
   });
+}
+
+function rectsOverlap(a, b, slack = 0) {
+  return !(
+    a.left + a.width + slack <= b.left
+    || b.left + b.width + slack <= a.left
+    || a.top + a.height + slack <= b.top
+    || b.top + b.height + slack <= a.top
+  );
+}
+
+function clamp(n, min, max) {
+  return Math.min(max, Math.max(min, n));
 }
 
 function resolveTarget(selector) {
@@ -74,11 +88,11 @@ export class GuidedTour {
     this._boundResize = () => this._onViewportChange();
     this._boundScroll = () => {
       if (!this.active) return;
-      if (this._cardLocked) {
-        if (this._spotlightTarget) this.refreshSpotlight(this._spotlightTarget, this._spotlightOpts || {});
-        return;
-      }
-      this._position();
+      // Sticky re-place: only nudge card if it now covers the spotlight target
+      this._position(this._spotlightTarget, {
+        ...(this._spotlightOpts || {}),
+        sticky: true,
+      });
     };
     this._mq = window.matchMedia(MOBILE_MQ);
     this._boundMq = () => {
@@ -169,7 +183,7 @@ export class GuidedTour {
     aboveFooter = false,
     scrollBlock = 'nearest',
     stepLabel = '',
-    lockCard = false,
+    forceCard = false,
   } = {}) {
     if (!this.active) return;
     const mobile = isMobileLayout();
@@ -192,7 +206,7 @@ export class GuidedTour {
     this._spotlightTarget = el;
     this._spotlightOpts = { pad, radius, aboveFooter };
 
-    if (el?.scrollIntoView && !this._cardLocked) {
+    if (el?.scrollIntoView) {
       try {
         el.scrollIntoView({
           behavior: prefersReducedMotion() ? 'auto' : 'smooth',
@@ -203,19 +217,12 @@ export class GuidedTour {
       } catch { /* ignore */ }
     }
 
-    if (this._cardLocked) {
-      this.refreshSpotlight(el, { pad, radius, aboveFooter });
-    } else {
-      this._position(el, { pad, radius, aboveFooter });
-      await waitFrames(prefersReducedMotion() ? 40 : CARD_MOVE_MS);
-      if (lockCard) this._cardLocked = true;
-    }
+    this._position(el, { pad, radius, aboveFooter, sticky: !forceCard });
+    await waitFrames(prefersReducedMotion() ? 40 : CARD_MOVE_MS);
   }
 
-  /** Keep the floating card where it is; only spotlight may update. */
-  lockCard() {
-    this._cardLocked = true;
-  }
+  /** @deprecated kept for callers; sticky placement replaces hard lock */
+  lockCard() {}
 
   unlockCard() {
     this._cardLocked = false;
@@ -234,31 +241,19 @@ export class GuidedTour {
     }
   }
 
-  /** Re-measure spotlight without moving the card (desktop). */
+  /** Re-measure spotlight; nudge card only if it covers the target. */
   refreshSpotlight(target, opts = {}) {
     if (!this.active) return;
     const el = resolveTarget(target);
     if (!el?.getBoundingClientRect) return;
     this._spotlightTarget = el;
     this._spotlightOpts = opts;
-    const mobile = isMobileLayout();
-    const pad = opts.pad ?? 10;
-    const radius = opts.radius ?? 12;
-    const rect = el.getBoundingClientRect();
-    const top = Math.max(8, rect.top - pad);
-    const left = Math.max(8, rect.left - pad);
-    const width = Math.min(window.innerWidth - left - 8, rect.width + pad * 2);
-    const height = Math.min(window.innerHeight - top - 8, rect.height + pad * 2);
-    this.spotlight.classList.remove('is-hidden');
-    this.spotlight.style.top = `${top}px`;
-    this.spotlight.style.left = `${left}px`;
-    this.spotlight.style.width = `${Math.max(24, width)}px`;
-    this.spotlight.style.height = `${Math.max(24, height)}px`;
-    this.spotlight.style.borderRadius = `${radius}px`;
-    if (mobile) {
-      this.card.classList.toggle('tour-card--sheet', true);
-      this.card.classList.toggle('tour-card--above-footer', Boolean(opts.aboveFooter));
-    }
+    this._position(el, {
+      pad: opts.pad,
+      radius: opts.radius,
+      aboveFooter: opts.aboveFooter,
+      sticky: opts.sticky !== false,
+    });
   }
 
   async next() {
@@ -376,11 +371,10 @@ export class GuidedTour {
 
   _onViewportChange() {
     if (!this.active) return;
-    if (this._cardLocked) {
-      if (this._spotlightTarget) this.refreshSpotlight(this._spotlightTarget, this._spotlightOpts || {});
-      return;
-    }
-    this._position();
+    this._position(this._spotlightTarget, {
+      ...(this._spotlightOpts || {}),
+      sticky: true,
+    });
   }
 
   async _showStep(index) {
@@ -402,6 +396,7 @@ export class GuidedTour {
       aboveFooter: step.aboveFooter,
       scrollBlock: step.scrollBlock || 'nearest',
       stepLabel: `${index + 1} / ${this.steps.length}`,
+      forceCard: true,
     });
 
     this.prevBtn.disabled = index === 0;
@@ -414,8 +409,8 @@ export class GuidedTour {
 
   _position(target = null, step = null) {
     if (!this.active) return;
-    step = step || this.getCurrentStep() || {};
-    if (!target) target = resolveTarget(step?.target);
+    step = step || {};
+    if (!target) target = resolveTarget(step?.target) || this._spotlightTarget;
 
     const mobile = isMobileLayout();
     this.card.classList.toggle('tour-card--sheet', mobile);
@@ -459,50 +454,106 @@ export class GuidedTour {
       return;
     }
 
-    this._placeDesktopCard(rect, pad);
+    this._placeDesktopCard(rect, pad, { sticky: Boolean(step?.sticky) });
   }
 
-  _placeDesktopCard(rect, pad) {
+  _placeDesktopCard(rect, pad, { sticky = false } = {}) {
     const card = this.card;
-    const gap = 16;
+    const gap = 20;
+    const margin = 16;
     const vw = window.innerWidth;
     const vh = window.innerHeight;
-    const cardW = Math.min(360, vw - 32);
+    const cardW = Math.min(360, vw - margin * 2);
     card.style.width = `${cardW}px`;
+    const ch = card.offsetHeight || 168;
 
-    const ch = card.offsetHeight || 160;
-    const spaceBelow = vh - (rect.bottom + pad);
-    const spaceAbove = rect.top - pad;
+    const avoid = {
+      left: rect.left - pad,
+      top: rect.top - pad,
+      width: rect.width + pad * 2,
+      height: rect.height + pad * 2,
+    };
 
-    let top;
-    let left = Math.min(Math.max(16, rect.left + rect.width / 2 - cardW / 2), vw - cardW - 16);
+    const current = this._cardPos
+      ? { left: this._cardPos.left, top: this._cardPos.top, width: cardW, height: ch }
+      : null;
 
-    if (spaceBelow >= ch + gap || spaceBelow >= spaceAbove) {
-      top = Math.min(rect.bottom + pad + gap, vh - ch - 16);
-    } else {
-      top = Math.max(16, rect.top - pad - gap - ch);
-    }
-
-    const overlaps =
-      top < rect.bottom + pad &&
-      top + ch > rect.top - pad &&
-      left < rect.right + pad &&
-      left + cardW > rect.left - pad;
-
-    if (overlaps) {
-      if (vw - rect.right - gap - 16 >= cardW) {
-        left = rect.right + gap;
-        top = Math.min(Math.max(16, rect.top), vh - ch - 16);
-      } else if (rect.left - gap - 16 >= cardW) {
-        left = rect.left - gap - cardW;
-        top = Math.min(Math.max(16, rect.top), vh - ch - 16);
-      } else {
-        // Prefer bottom dock so card doesn't jump over content
-        top = Math.min(vh - ch - 20, Math.max(16, rect.bottom + gap));
+    // Stay put if sticky and current slot still clears the spotlight target
+    if (sticky && current) {
+      const inView =
+        current.left >= margin - 2
+        && current.top >= margin - 2
+        && current.left + current.width <= vw - margin + 2
+        && current.top + current.height <= vh - margin + 2;
+      if (inView && !rectsOverlap(current, avoid, CARD_STICKY_SLACK)) {
+        return;
       }
     }
 
-    this._setCardPos(left, top);
+    const largeTarget = rect.width > vw * 0.42 || rect.height > vh * 0.38;
+    const candidates = [];
+
+    const push = (left, top, bias = 0) => {
+      candidates.push({
+        left: clamp(left, margin, vw - cardW - margin),
+        top: clamp(top, margin, vh - ch - margin),
+        bias,
+      });
+    };
+
+    // Prefer sides / corners for large canvases so the demo stays visible
+    if (largeTarget) {
+      push(rect.right + gap, rect.top, 40);
+      push(rect.left - gap - cardW, rect.top, 40);
+      push(vw - cardW - margin, 72, 55);
+      push(margin, 72, 50);
+      push(vw - cardW - margin, vh - ch - 88, 45);
+      push(margin, vh - ch - 88, 40);
+    } else {
+      push(rect.left + rect.width / 2 - cardW / 2, rect.bottom + pad + gap, 30);
+      push(rect.left + rect.width / 2 - cardW / 2, rect.top - pad - gap - ch, 25);
+      push(rect.right + gap, rect.top, 35);
+      push(rect.left - gap - cardW, rect.top, 35);
+      push(vw - cardW - margin, 72, 20);
+      push(margin, 72, 15);
+    }
+
+    let best = null;
+    let bestScore = -Infinity;
+    for (const c of candidates) {
+      const box = { left: c.left, top: c.top, width: cardW, height: ch };
+      let score = c.bias;
+      if (rectsOverlap(box, avoid, 4)) score -= 8000;
+      // Prefer staying near the current card — less “flying”
+      if (current) {
+        const dist = Math.hypot(c.left - current.left, c.top - current.top);
+        score -= dist * 0.35;
+      }
+      // Mild preference to stay near the target (readable pairing)
+      const tcx = rect.left + rect.width / 2;
+      const tcy = rect.top + rect.height / 2;
+      const ccx = c.left + cardW / 2;
+      const ccy = c.top + ch / 2;
+      score -= Math.hypot(ccx - tcx, ccy - tcy) * 0.08;
+      if (score > bestScore) {
+        bestScore = score;
+        best = c;
+      }
+    }
+
+    if (!best) {
+      best = { left: vw - cardW - margin, top: 72 };
+    }
+
+    // Ignore tiny nudges while sticky
+    if (sticky && current) {
+      const dist = Math.hypot(best.left - current.left, best.top - current.top);
+      if (dist < 28 && !rectsOverlap(current, avoid, CARD_STICKY_SLACK)) {
+        return;
+      }
+    }
+
+    this._setCardPos(best.left, best.top);
   }
 
   _setCardPos(left, top) {
