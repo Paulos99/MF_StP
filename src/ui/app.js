@@ -1679,11 +1679,78 @@ function init() {
     runCalculation: (opts) => runCalculation(opts || { silent: true }),
     applySketchTemplate: (name) => sketchEditor?._applyTemplate?.(name),
     getSketchEditor: () => sketchEditor,
+    setSchemeView: (view) => setSchemeView(view),
     onDemoStart: () => { onboardingDemoActive = true; },
     onDemoEnd: () => { onboardingDemoActive = false; },
+    resetAfterDemo: () => resetUiAfterOnboarding(),
   });
   if (!state.inputMode) {
     appOnboarding.maybeAutoStart();
+  }
+}
+
+function resetUiAfterOnboarding() {
+  onboardingDemoActive = true;
+  try {
+    closeMobileSidebar();
+    document.querySelectorAll('.tour-demo-pulse').forEach((el) => el.classList.remove('tour-demo-pulse'));
+
+    if (sketchEditor) {
+      sketchEditor.openingsModalOpen = false;
+      if (sketchEditor.openingsModal) {
+        sketchEditor.openingsModal.classList.remove('is-open');
+        sketchEditor.openingsModal.hidden = true;
+      }
+      sketchEditor.geometryLocked = false;
+      sketchEditor.host?.classList.remove('sketch-geometry-locked');
+      sketchEditor.vertices = [];
+      sketchEditor.edgeDimensions = {};
+      sketchEditor.diagonalDimensions = {};
+      sketchEditor.closed = false;
+      sketchEditor._previewPoint = null;
+      sketchEditor._clearPanelOverlay?.();
+      sketchEditor._hideEdgeActions?.();
+      sketchEditor.keypad?.hide?.();
+    }
+
+    state.room.setVertices([], {}, {});
+    state.room.openings = [];
+    state.areaWalls = [];
+    state.areaValue = null;
+    state.forceAreaBySize = false;
+
+    if (els.form.calcCeiling) els.form.calcCeiling.checked = true;
+    if (els.form.quickLength) els.form.quickLength.value = '5';
+    if (els.form.quickWidth) els.form.quickWidth.value = '4';
+    if (els.form.quickHeight) els.form.quickHeight.value = '2.7';
+    if (els.form.wallHeight) els.form.wallHeight.value = '2.7';
+    if ($('drawHeight')) $('drawHeight').value = '2.7';
+    if (els.form.ceilingMounting) els.form.ceilingMounting.value = 'ceiling_frameless';
+    if (els.form.wallMounting) els.form.wallMounting.value = 'wall_framed';
+    document.querySelectorAll('[data-segment-for="ceilingMounting"] .segmented__btn').forEach((btn) => {
+      btn.classList.toggle('is-active', btn.dataset.value === 'ceiling_frameless');
+    });
+    document.querySelectorAll('[data-segment-for="wallMounting"] .segmented__btn').forEach((btn) => {
+      btn.classList.toggle('is-active', btn.dataset.value === 'wall_framed');
+    });
+
+    state.inputMode = null;
+    clearResultsUi('Выберите способ слева');
+    refreshWallSurfaceCheckboxes();
+    setAllWallSurfaces(true);
+    syncModePanelsUi();
+    updateSchemeModeUi();
+    updateLayoutMode();
+    setSchemeView('plan');
+    updatePlanStats();
+    sketchEditor?.fitToScreen?.();
+    sketchEditor?.render?.();
+    sketchEditor?._updateUi?.();
+    try {
+      window.scrollTo(0, 0);
+    } catch { /* ignore */ }
+  } finally {
+    onboardingDemoActive = false;
   }
 }
 

@@ -194,6 +194,44 @@ export class GuidedTour {
     await waitFrames(prefersReducedMotion() ? 40 : CARD_MOVE_MS);
   }
 
+  /** Change title/text only — no spotlight/card jump. */
+  setCopy({ title, text, textMobile, stepLabel } = {}) {
+    if (!this.active) return;
+    const mobile = isMobileLayout();
+    const body = mobile && textMobile ? textMobile : text;
+    if (title != null) this.titleEl.textContent = title;
+    if (body != null) this.textEl.textContent = body;
+    if (stepLabel) {
+      this.stepEl.hidden = false;
+      this.stepEl.textContent = stepLabel;
+    }
+  }
+
+  /** Re-measure spotlight without moving the card (desktop). */
+  refreshSpotlight(target, opts = {}) {
+    if (!this.active) return;
+    const el = resolveTarget(target);
+    if (!el?.getBoundingClientRect) return;
+    const mobile = isMobileLayout();
+    const pad = opts.pad ?? 10;
+    const radius = opts.radius ?? 12;
+    const rect = el.getBoundingClientRect();
+    const top = Math.max(8, rect.top - pad);
+    const left = Math.max(8, rect.left - pad);
+    const width = Math.min(window.innerWidth - left - 8, rect.width + pad * 2);
+    const height = Math.min(window.innerHeight - top - 8, rect.height + pad * 2);
+    this.spotlight.classList.remove('is-hidden');
+    this.spotlight.style.top = `${top}px`;
+    this.spotlight.style.left = `${left}px`;
+    this.spotlight.style.width = `${Math.max(24, width)}px`;
+    this.spotlight.style.height = `${Math.max(24, height)}px`;
+    this.spotlight.style.borderRadius = `${radius}px`;
+    if (mobile) {
+      this.card.classList.toggle('tour-card--sheet', true);
+      this.card.classList.toggle('tour-card--above-footer', Boolean(opts.aboveFooter));
+    }
+  }
+
   async next() {
     if (!this.active || this.demoMode) return;
     if (this.stepIndex >= this.steps.length - 1) {
