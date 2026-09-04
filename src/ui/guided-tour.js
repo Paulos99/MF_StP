@@ -421,17 +421,11 @@ export class GuidedTour {
     this.card.classList.toggle('tour-card--sheet', mobile);
     this.card.classList.toggle('tour-card--above-footer', Boolean(step?.aboveFooter && mobile));
 
+    // Card stays docked: bottom center (desktop) / bottom sheet (mobile)
+    this._dockCard();
+
     if (!target || !target.getBoundingClientRect) {
       this.spotlight.classList.add('is-hidden');
-      if (!mobile) {
-        this._setCardPos(window.innerWidth / 2 - 180, window.innerHeight * 0.18);
-      } else {
-        this.card.style.left = '';
-        this.card.style.top = '';
-        this.card.style.right = '';
-        this.card.style.bottom = '';
-        this.card.style.transform = '';
-      }
       return;
     }
 
@@ -456,136 +450,24 @@ export class GuidedTour {
       void this.spotlight.offsetWidth;
       this.spotlight.classList.remove('tour-spotlight--snap');
     }
-
-    if (mobile) {
-      this.card.style.left = '';
-      this.card.style.top = '';
-      this.card.style.right = '';
-      this.card.style.bottom = '';
-      this.card.style.transform = '';
-      return;
-    }
-
-    this._placeDesktopCard(rect, pad, { sticky: Boolean(step?.sticky) });
   }
 
-  _placeDesktopCard(rect, pad, { sticky = false } = {}) {
+  /** Fixed bottom-center dock — no chasing the spotlight. */
+  _dockCard() {
     const card = this.card;
-    const gap = 20;
-    const margin = 16;
-    const vw = window.innerWidth;
-    const vh = window.innerHeight;
-    const cardW = Math.min(360, vw - margin * 2);
-    card.style.width = `${cardW}px`;
-    const ch = card.offsetHeight || 168;
-
-    const avoid = {
-      left: rect.left - pad,
-      top: rect.top - pad,
-      width: rect.width + pad * 2,
-      height: rect.height + pad * 2,
-    };
-
-    const current = this._cardPos
-      ? { left: this._cardPos.left, top: this._cardPos.top, width: cardW, height: ch }
-      : null;
-
-    // Stay put if sticky and current slot still clears the spotlight target
-    if (sticky && current) {
-      const inView =
-        current.left >= margin - 2
-        && current.top >= margin - 2
-        && current.left + current.width <= vw - margin + 2
-        && current.top + current.height <= vh - margin + 2;
-      if (inView && !rectsOverlap(current, avoid, CARD_STICKY_SLACK)) {
-        return;
-      }
-    }
-
-    const largeTarget = rect.width > vw * 0.42 || rect.height > vh * 0.38;
-    const candidates = [];
-
-    const push = (left, top, bias = 0) => {
-      candidates.push({
-        left: clamp(left, margin, vw - cardW - margin),
-        top: clamp(top, margin, vh - ch - margin),
-        bias,
-      });
-    };
-
-    // Prefer sides / corners for large canvases so the demo stays visible
-    if (largeTarget) {
-      push(rect.right + gap, rect.top, 40);
-      push(rect.left - gap - cardW, rect.top, 40);
-      push(vw - cardW - margin, 72, 55);
-      push(margin, 72, 50);
-      push(vw - cardW - margin, vh - ch - 88, 45);
-      push(margin, vh - ch - 88, 40);
-    } else {
-      push(rect.left + rect.width / 2 - cardW / 2, rect.bottom + pad + gap, 30);
-      push(rect.left + rect.width / 2 - cardW / 2, rect.top - pad - gap - ch, 25);
-      push(rect.right + gap, rect.top, 35);
-      push(rect.left - gap - cardW, rect.top, 35);
-      push(vw - cardW - margin, 72, 20);
-      push(margin, 72, 15);
-    }
-
-    let best = null;
-    let bestScore = -Infinity;
-    for (const c of candidates) {
-      const box = { left: c.left, top: c.top, width: cardW, height: ch };
-      let score = c.bias;
-      if (rectsOverlap(box, avoid, 4)) score -= 8000;
-      // Prefer staying near the current card — less “flying”
-      if (current) {
-        const dist = Math.hypot(c.left - current.left, c.top - current.top);
-        score -= dist * 0.35;
-      }
-      // Mild preference to stay near the target (readable pairing)
-      const tcx = rect.left + rect.width / 2;
-      const tcy = rect.top + rect.height / 2;
-      const ccx = c.left + cardW / 2;
-      const ccy = c.top + ch / 2;
-      score -= Math.hypot(ccx - tcx, ccy - tcy) * 0.08;
-      if (score > bestScore) {
-        bestScore = score;
-        best = c;
-      }
-    }
-
-    if (!best) {
-      best = { left: vw - cardW - margin, top: 72 };
-    }
-
-    // Ignore tiny nudges while sticky
-    if (sticky && current) {
-      const dist = Math.hypot(best.left - current.left, best.top - current.top);
-      if (dist < 28 && !rectsOverlap(current, avoid, CARD_STICKY_SLACK)) {
-        return;
-      }
-    }
-
-    this._setCardPos(best.left, best.top);
+    if (!card) return;
+    card.style.left = '';
+    card.style.top = '';
+    card.style.right = '';
+    card.style.bottom = '';
+    card.style.width = '';
+    card.style.transform = '';
+    this._cardPos = { docked: true };
   }
 
-  _setCardPos(left, top) {
-    const card = this.card;
-    card.style.right = 'auto';
-    card.style.bottom = 'auto';
-    card.style.transform = 'none';
-
-    // First placement: set without transition jump from 0,0
-    if (!this._cardPos) {
-      card.classList.add('tour-card--no-motion');
-      card.style.left = `${left}px`;
-      card.style.top = `${top}px`;
-      void card.offsetWidth;
-      card.classList.remove('tour-card--no-motion');
-    } else {
-      card.style.left = `${left}px`;
-      card.style.top = `${top}px`;
-    }
-    this._cardPos = { left, top };
+  _setCardPos() {
+    // Kept for compatibility — card is CSS-docked at bottom center
+    this._dockCard();
   }
 
   _restoreSidebar() {
