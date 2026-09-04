@@ -5841,28 +5841,11 @@ body.theme-dark .entry-card__title {
   color: #6a4a12;
 }
 
-.calc-ready-banner {
-  margin: 12px 0;
-  padding: 12px 14px;
-  border-radius: 12px;
-  background: rgba(1, 100, 79, 0.1);
-  border: 1px solid rgba(1, 100, 79, 0.28);
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
 
-.calc-ready-banner__delta {
-  font-size: 0.88rem;
-  color: #01644f;
-  font-weight: 600;
-}
 
-.calc-ready-banner__actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 12px;
-}
+
+
+
 
 .theme-toggle {
   display: inline-flex;
@@ -5913,9 +5896,7 @@ body.theme-dark .entry-card__title {
 #sharedCalcOptions[hidden],
 #entryPicker[hidden],
 #activeModeBar[hidden],
-#calcReadyBanner[hidden] {
-  display: none !important;
-}
+
 
 .btn-sm {
   padding: 8px 12px;
@@ -5941,9 +5922,7 @@ body.theme-dark .entry-card__title {
   padding: 8px 10px;
   margin: 8px 0;
 }
-#calcReadyBanner[hidden] {
-  display: none !important;
-}
+
 .entry-picker__lead {
   margin-bottom: 4px;
 }

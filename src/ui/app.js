@@ -284,7 +284,6 @@ function syncChromeUi() {
 
   $('shareBtnSecondary')?.toggleAttribute('hidden', !ready);
   $('downloadBtn')?.toggleAttribute('hidden', !ready);
-  $('calcReadyBanner')?.toggleAttribute('hidden', !ready);
 
   // В draw до замкнутого контура — только высота/фото, без «что считать»
   const shared = $('sharedCalcOptions');
@@ -316,7 +315,6 @@ function clearResultsUi(message = '') {
       ? 'Цифры появятся после расчёта'
       : 'Выберите способ слева');
   }
-  $('calcReadyBanner')?.setAttribute('hidden', '');
   sketchEditor?.clearPanelPreview?.();
   updateResultsTabsVisibility();
   updateStatCards();
@@ -684,8 +682,6 @@ function setupModeToggles() {
     setSchemeView('walls');
     sketchEditor?._openOpeningsModal?.();
   });
-  $('readyOpenWallsBtn')?.addEventListener('click', () => setSchemeView('walls'));
-  $('readyShareBtn')?.addEventListener('click', () => handleShare());
   $('shareBtnSecondary')?.addEventListener('click', () => handleShare());
 }
 
@@ -1052,36 +1048,27 @@ function applyResultsToUi() {
   $('resultsText').textContent = text || 'Выполните расчёт, чтобы увидеть результаты.';
   updateStatCards();
   updateResultsPreview();
-  showCalcReadyBanner();
+  flashCalcReadyStatus();
 }
 
-function showCalcReadyBanner() {
+function flashCalcReadyStatus() {
   const statusEl = $('schemeStatus');
-  if (!state.hasResults || !state.bom?.total) {
-    $('calcReadyBanner')?.setAttribute('hidden', '');
-    return;
-  }
+  if (!state.hasResults || !state.bom?.total || !statusEl) return;
   const panels = state.bom.total.panelsWithReserve ?? 0;
   let msg = 'Расчёт готов';
   if (lastPanelsSnapshot != null && lastPanelsSnapshot !== panels) {
     msg = `Обновлено: ${lastPanelsSnapshot} → ${panels} пан.`;
   }
   lastPanelsSnapshot = panels;
-
-  if (statusEl) {
-    statusEl.hidden = false;
-    statusEl.textContent = msg;
-    statusEl.classList.add('is-computing');
-    clearTimeout(showCalcReadyBanner._t);
-    showCalcReadyBanner._t = setTimeout(() => {
-      statusEl.classList.remove('is-computing');
-      statusEl.hidden = true;
-      statusEl.textContent = '';
-    }, 2600);
-  }
-
-  // Компактный CTA проёмов только в сайдбаре — без второго баннера «готов»
-  $('calcReadyBanner')?.setAttribute('hidden', '');
+  statusEl.hidden = false;
+  statusEl.textContent = msg;
+  statusEl.classList.add('is-computing');
+  clearTimeout(flashCalcReadyStatus._t);
+  flashCalcReadyStatus._t = setTimeout(() => {
+    statusEl.classList.remove('is-computing');
+    statusEl.hidden = true;
+    statusEl.textContent = '';
+  }, 2200);
   updateSurfaceGroupsUi();
   syncChromeUi();
 }
@@ -1113,7 +1100,7 @@ function runQuickAreaCalc(area) {
 
   state.hasResults = true;
   state.resultsStale = false;
-  showCalcReadyBanner();
+  flashCalcReadyStatus();
   updateLayoutMode();
   updateStatCards();
   updateResultsPreview();
