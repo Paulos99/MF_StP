@@ -2816,31 +2816,39 @@ body.tour-demo-playing .tour-skip {
     transform: translateY(-50%);
     width: 40px;
     height: 40px;
-    min-width: var(--touch-min);
-    min-height: var(--touch-min);
+    min-width: 40px;
+    min-height: 40px;
+    padding: 0;
+    border: none;
     border-radius: 50%;
-    border: 1.5px solid rgba(255, 255, 255, 0.55);
-    background: rgba(255, 255, 255, 0.14);
-    color: #fff;
-    font-family: 'Manrope', system-ui, sans-serif;
-    font-size: 1.15rem;
-    font-weight: 800;
-    line-height: 1;
+    background: transparent;
+    color: rgba(255, 255, 255, 0.92);
     cursor: pointer;
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    transition: background 0.15s, border-color 0.15s, transform 0.15s;
+    transition: color 0.18s ease, background 0.18s ease, transform 0.15s ease;
     z-index: 2;
 }
 
+.app-header__help-icon {
+    display: block;
+    flex-shrink: 0;
+    overflow: visible;
+}
+
 .app-header__help:hover {
-    background: rgba(255, 255, 255, 0.28);
-    border-color: rgba(255, 255, 255, 0.9);
+    color: #fff;
+    background: rgba(255, 255, 255, 0.14);
 }
 
 .app-header__help:active {
-    transform: translateY(-50%) scale(0.96);
+    transform: translateY(-50%) scale(0.94);
+}
+
+.app-header__help:focus-visible {
+    outline: 2px solid rgba(255, 255, 255, 0.85);
+    outline-offset: 2px;
 }
 
 @media (max-width: 899px) {
