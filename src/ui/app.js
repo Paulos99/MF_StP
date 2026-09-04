@@ -1678,6 +1678,7 @@ function init() {
     setInputMode: (mode, opts) => setInputMode(mode, opts),
     runCalculation: (opts) => runCalculation(opts || { silent: true }),
     applySketchTemplate: (name) => sketchEditor?._applyTemplate?.(name),
+    getSketchEditor: () => sketchEditor,
     onDemoStart: () => { onboardingDemoActive = true; },
     onDemoEnd: () => { onboardingDemoActive = false; },
   });

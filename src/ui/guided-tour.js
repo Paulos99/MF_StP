@@ -136,9 +136,10 @@ export class GuidedTour {
     document.body.classList.add('tour-active');
     document.body.classList.toggle('tour-demo-playing', demoMode);
     this.blocker.hidden = !demoMode;
+    // Demo: user advances with Далее; hide Back
     this.prevBtn.hidden = demoMode;
-    this.nextBtn.hidden = demoMode;
-    this.stepEl.hidden = demoMode;
+    this.nextBtn.hidden = false;
+    this.stepEl.hidden = false;
     this._bindGlobal();
 
     if (!demoMode && this.steps.length) {
@@ -295,10 +296,11 @@ export class GuidedTour {
     if (e.key === 'Escape') {
       e.preventDefault();
       this.skip();
-    } else if (!this.demoMode && (e.key === 'ArrowRight' || e.key === 'Enter')) {
+    } else if (e.key === 'ArrowRight' || e.key === 'Enter') {
       if (e.target === this.prevBtn) return;
       e.preventDefault();
-      this.next();
+      if (this.demoMode) this.nextBtn?.click();
+      else this.next();
     } else if (!this.demoMode && e.key === 'ArrowLeft') {
       e.preventDefault();
       this.prev();

@@ -4,14 +4,25 @@ import {
   closeMobileSidebar,
   tourIsMobileLayout,
 } from './guided-tour.js';
-import { VirtualCursor, sleep, waitFor } from './virtual-cursor.js';
+import { VirtualCursor, sleep } from './virtual-cursor.js';
 import { SKETCH_TUTORIAL_KEY } from '../editor/sketch-onboarding.js';
 
-export const APP_TUTORIAL_KEY = 'mf-app-tutorial-v2';
+export const APP_TUTORIAL_KEY = 'mf-app-tutorial-v3';
+
+/** Simple L-room in meters (1 m grid). Last click closes on first point. */
+const DEMO_ROOM = [
+  { x: 0, y: 0 },
+  { x: 5, y: 0 },
+  { x: 5, y: 2 },
+  { x: 2, y: 2 },
+  { x: 2, y: 4 },
+  { x: 0, y: 4 },
+];
 
 let appTourApi = null;
 let demoHooks = null;
 let demoAbort = null;
+let nextWaiters = [];
 
 function $(sel) {
   return document.querySelector(sel);
@@ -21,95 +32,231 @@ function aborted() {
   return demoAbort?.signal?.aborted;
 }
 
-async function pause(ms) {
+function throwIfAborted() {
   if (aborted()) throw new DOMException('aborted', 'AbortError');
-  await waitFor(ms, { signal: demoAbort.signal });
+}
+
+function clearNextWaiters(err) {
+  const list = nextWaiters.splice(0, nextWaiters.length);
+  list.forEach((w) => (err ? w.reject(err) : w.resolve()));
+}
+
+function waitForUserNext(tour) {
+  throwIfAborted();
+  tour.nextBtn.hidden = false;
+  tour.prevBtn.hidden = true;
+  tour.nextBtn.disabled = false;
+  return new Promise((resolve, reject) => {
+    nextWaiters.push({ resolve, reject });
+    const onAbort = () => {
+      demoAbort.signal.removeEventListener('abort', onAbort);
+      reject(new DOMException('aborted', 'AbortError'));
+    };
+    demoAbort.signal.addEventListener('abort', onAbort, { once: true });
+  });
+}
+
+function wireNextButton(tour) {
+  tour.nextBtn.onclick = () => {
+    const list = nextWaiters.splice(0, nextWaiters.length);
+    list.forEach((w) => w.resolve());
+  };
 }
 
 async function narrate(tour, opts) {
-  if (aborted()) throw new DOMException('aborted', 'AbortError');
+  throwIfAborted();
   await tour.narrate(opts);
 }
 
-async function ensureDrawMode(cursor, tour) {
-  const mobile = tourIsMobileLayout();
-  if (mobile && !document.body.classList.contains('mobile-sidebar-open')) {
-    await narrate(tour, {
-      title: 'Начнём с параметров',
-      text: 'На телефоне сначала открываем настройки — отсюда выбирается способ расчёта.',
-      target: '#mobileParamsBtn',
-      aboveFooter: true,
-      radius: 14,
-      stepLabel: 'Демо',
-    });
-    await cursor.click($('#mobileParamsBtn'));
-    await pause(350);
+async function drawRoomWithCursor(cursor, editor) {
+  if (!editor) return;
+  editor.prepareDemoDrawView({ minX: -0.5, minY: -0.5, maxX: 6, maxY: 5 });
+  await sleep(200);
+
+  for (const pt of DEMO_ROOM) {
+    throwIfAborted();
+    const screen = editor.worldToClient(pt.x, pt.y);
+    await cursor.moveTo(screen, { duration: 1500 });
+    await sleep(120);
+    cursor.el?.classList.add('is-pressing');
+    cursor.ripple?.classList.remove('is-burst');
+    void cursor.ripple?.offsetWidth;
+    cursor.ripple?.classList.add('is-burst');
+    await sleep(160);
+    editor.demoTapWorld(pt.x, pt.y);
+    await sleep(280);
+    cursor.el?.classList.remove('is-pressing');
   }
 
-  await narrate(tour, {
-    title: 'Выбираем «Нарисовать схему»',
-    text: 'Когда форма комнаты сложная — удобнее набросать контур. Есть и готовые шаблоны.',
-    textMobile: 'Когда форма комнаты сложная — набрасываем контур или берём шаблон.',
-    target: '#entryDrawBtn',
-    stepLabel: 'Демо',
-  });
+  // Close on start point
+  throwIfAborted();
+  const start = DEMO_ROOM[0];
+  const closeScreen = editor.worldToClient(start.x, start.y);
+  await cursor.moveTo(closeScreen, { duration: 1200 });
+  await sleep(150);
+  cursor.el?.classList.add('is-pressing');
+  cursor.ripple?.classList.add('is-burst');
+  await sleep(160);
+  editor.demoTapWorld(start.x, start.y);
+  await sleep(200);
+  cursor.el?.classList.remove('is-pressing');
 
-  const drawBtn = $('#entryDrawBtn');
-  if (drawBtn && demoHooks?.getInputMode?.() !== 'draw') {
-    await cursor.click(drawBtn);
-    await pause(450);
-  } else if (demoHooks?.getInputMode?.() !== 'draw') {
-    demoHooks?.setInputMode?.('draw', { confirmSwitch: false });
-    await pause(350);
-  }
-
-  if (mobile) {
-    closeMobileSidebar();
-    await pause(280);
-  }
-}
-
-async function applyLShapeWithCursor(cursor, tour) {
-  const tplBtn = $('#sketchTemplatesBtn');
-  const menu = $('.sketch-dropdown-menu');
-  const lBtn = $('[data-template="l-shape"]');
-
-  await narrate(tour, {
-    title: 'Берём готовую форму',
-    text: 'Вместо пустой сетки покажем живой пример: курсор выберет Г-образную комнату — типичный случай для расчёта.',
-    target: tplBtn || '#sketchCanvas',
-    radius: 16,
-    stepLabel: 'Демо',
-  });
-
-  if (tplBtn && lBtn) {
-    await cursor.click(tplBtn);
-    if (menu) menu.hidden = false;
-    await pause(280);
-    await narrate(tour, {
-      title: 'Г-форма за секунду',
-      text: 'Шаблон сразу даёт замкнутый контур с размерами. Можно было и кликать по сетке вручную — шаг 1 м.',
-      target: lBtn,
-      pad: 6,
-      radius: 8,
-      stepLabel: 'Демо',
-    });
-    await cursor.click(lBtn);
-    if (menu) menu.hidden = true;
-  } else {
-    demoHooks?.applySketchTemplate?.('l-shape');
-  }
-
-  await pause(700);
-  // Force calc if settle is slow
+  await sleep(400);
   demoHooks?.runCalculation?.({ silent: true });
-  await pause(500);
+  await sleep(500);
 }
+
+const STEPS = [
+  {
+    id: 'mode',
+    title: 'Режим схемы',
+    text: 'Для сложной формы выбираем «Нарисовать схему».',
+    textMobile: 'Откройте параметры и выберите «Нарисовать схему».',
+    async play(cursor, tour) {
+      const mobile = tourIsMobileLayout();
+      if (mobile && !document.body.classList.contains('mobile-sidebar-open')) {
+        await narrate(tour, {
+          title: this.title,
+          text: this.textMobile,
+          target: '#mobileParamsBtn',
+          aboveFooter: true,
+          radius: 14,
+          stepLabel: '1 / 6',
+        });
+        await cursor.click($('#mobileParamsBtn'), { duration: 1300 });
+        await sleep(300);
+      }
+
+      await narrate(tour, {
+        title: this.title,
+        text: this.text,
+        textMobile: this.textMobile,
+        target: '#entryDrawBtn',
+        stepLabel: '1 / 6',
+      });
+
+      if (demoHooks?.getInputMode?.() !== 'draw') {
+        const btn = $('#entryDrawBtn');
+        if (btn) await cursor.click(btn, { duration: 1400 });
+        else demoHooks?.setInputMode?.('draw', { confirmSwitch: false });
+        await sleep(350);
+      }
+
+      if (mobile) {
+        closeMobileSidebar();
+        await sleep(250);
+      }
+    },
+  },
+  {
+    id: 'draw',
+    title: 'Рисуем комнату',
+    text: 'Курсор ставит углы по сетке 1 м и замыкает контур.',
+    async play(cursor, tour) {
+      await narrate(tour, {
+        title: this.title,
+        text: this.text,
+        target: '#sketchCanvas',
+        stepLabel: '2 / 6',
+      });
+      const editor = demoHooks?.getSketchEditor?.();
+      await drawRoomWithCursor(cursor, editor);
+    },
+  },
+  {
+    id: 'layout',
+    title: 'Раскладка панелей',
+    text: 'Контур готов — на схеме сразу видна раскладка MultiFRAME.',
+    async play(cursor, tour) {
+      if (tourIsMobileLayout()) closeMobileSidebar();
+      await narrate(tour, {
+        title: this.title,
+        text: this.text,
+        target: '.scheme-card',
+        stepLabel: '3 / 6',
+      });
+      await cursor.moveTo($('.scheme-card') || { x: window.innerWidth * 0.5, y: window.innerHeight * 0.45 }, { duration: 1200 });
+      await sleep(200);
+    },
+  },
+  {
+    id: 'surfaces',
+    title: 'Потолок и стены',
+    text: 'Отметьте поверхности и тип монтажа — смета подстроится.',
+    async play(cursor, tour) {
+      if (tourIsMobileLayout()) {
+        openMobileSidebar();
+        await sleep(280);
+      }
+      $('#sharedReveal')?.classList.add('is-open');
+      $('#sharedReveal')?.querySelector('.shared-reveal__collapse')?.removeAttribute('inert');
+
+      await narrate(tour, {
+        title: this.title,
+        text: this.text,
+        target: '#sharedCalcOptions',
+        scrollBlock: 'center',
+        stepLabel: '4 / 6',
+      });
+      const el = $('#sharedCalcOptions');
+      if (el) await cursor.moveTo(el, { duration: 1300 });
+      await sleep(200);
+    },
+  },
+  {
+    id: 'results',
+    title: 'Смета и PDF',
+    text: 'Список материалов и выгрузка в PDF — для клиента или прораба.',
+    async play(cursor, tour) {
+      if (tourIsMobileLayout()) {
+        closeMobileSidebar();
+        await sleep(250);
+      }
+      await narrate(tour, {
+        title: this.title,
+        text: this.text,
+        target: '#resultsAside',
+        stepLabel: '5 / 6',
+      });
+      const aside = $('#resultsAside');
+      if (aside) await cursor.moveTo(aside, { duration: 1300 });
+      const pdf = $('#downloadBtn');
+      if (pdf) {
+        await cursor.moveTo(pdf, { duration: 1100 });
+        pdf.classList.add('tour-demo-pulse');
+        await sleep(500);
+        pdf.classList.remove('tour-demo-pulse');
+      }
+    },
+  },
+  {
+    id: 'buy',
+    title: 'Купить MultiFRAME',
+    text: 'Когда цифры устраивают — переход к покупке. Повторить обучение: «?» в шапке.',
+    async play(cursor, tour) {
+      const buy = $('#buyMultiframeBtn') || $('.stat-card-button');
+      await narrate(tour, {
+        title: this.title,
+        text: this.text,
+        target: buy || '#appHelpBtn',
+        radius: 14,
+        stepLabel: '6 / 6',
+      });
+      if (buy) {
+        await cursor.moveTo(buy, { duration: 1400 });
+        buy.classList.add('tour-demo-pulse');
+        await sleep(600);
+        buy.classList.remove('tour-demo-pulse');
+      }
+    },
+  },
+];
 
 async function runDemo(tour) {
   const cursor = new VirtualCursor(tour.root);
   demoAbort = new AbortController();
   demoHooks?.onDemoStart?.();
+  clearNextWaiters();
 
   try {
     await tour.start([], {
@@ -126,130 +273,41 @@ async function runDemo(tour) {
       },
     });
 
-    tour.skipBtn.textContent = 'Пропустить демо';
+    tour.skipBtn.textContent = 'Пропустить';
+    wireNextButton(tour);
     cursor.show();
 
-    await narrate(tour, {
-      title: 'Как считают MultiFRAME',
-      text: 'Не теория — короткий рабочий проход: схема, раскладка, смета и покупка. Следите за курсором.',
-      target: '.app-header',
-      radius: 16,
-      stepLabel: 'Демо',
-    });
-    await pause(900);
+    for (let i = 0; i < STEPS.length; i++) {
+      throwIfAborted();
+      const step = STEPS[i];
+      const isLast = i === STEPS.length - 1;
+      tour.nextBtn.textContent = isLast ? 'Готово' : 'Далее';
+      tour.nextBtn.disabled = true;
 
-    await ensureDrawMode(cursor, tour);
+      await step.play(cursor, tour);
 
-    await narrate(tour, {
-      title: 'Рабочая область схемы',
-      text: 'Здесь живёт чертёж: сетка, зум, шаблоны и фото плана. Сейчас соберём пример комнаты.',
-      target: '.scheme-card',
-      stepLabel: 'Демо',
-    });
-    await pause(600);
+      throwIfAborted();
+      tour.nextBtn.disabled = false;
+      tour.nextBtn.focus?.({ preventScroll: true });
 
-    await applyLShapeWithCursor(cursor, tour);
-
-    await narrate(tour, {
-      title: 'Раскладка уже на схеме',
-      text: 'Контур замкнут — калькулятор сам раскладывает панели MultiFRAME. Это не макет «на потом», а живой результат.',
-      target: '.scheme-card',
-      stepLabel: 'Демо',
-    });
-    await pause(1100);
-
-    if (tourIsMobileLayout()) {
-      openMobileSidebar();
-      await pause(320);
+      if (isLast) {
+        await waitForUserNext(tour);
+        cursor.hide();
+        tour.complete();
+      } else {
+        await waitForUserNext(tour);
+      }
     }
-
-    const shared = $('#sharedCalcOptions');
-    if (shared && $('#sharedReveal')) {
-      $('#sharedReveal')?.classList.add('is-open');
-      $('#sharedReveal')?.querySelector('.shared-reveal__collapse')?.removeAttribute('inert');
-    }
-
-    await narrate(tour, {
-      title: 'Что входит в смету',
-      text: 'Отмечаете потолок и стены, выбираете монтаж — список материалов и сумма перестраиваются под задачу.',
-      target: '#sharedCalcOptions',
-      scrollBlock: 'center',
-      stepLabel: 'Демо',
-    });
-    await pause(1000);
-
-    if (tourIsMobileLayout()) {
-      closeMobileSidebar();
-      await pause(300);
-    }
-
-    await narrate(tour, {
-      title: 'Цифры под рукой',
-      text: 'Площадь, число панелей и стоимость обновляются вместе со схемой — видно сразу, без отдельных «экранов отчёта».',
-      target: '.workspace-stats',
-      stepLabel: 'Демо',
-    });
-    await pause(900);
-
-    await narrate(tour, {
-      title: 'Детальный список',
-      text: 'Справа (или ниже на телефоне) — полный состав: панели, комплектующие, запас. Удобно сверить перед заказом.',
-      target: '#resultsAside',
-      scrollBlock: 'nearest',
-      stepLabel: 'Демо',
-    });
-    await pause(900);
-
-    const pdfBtn = $('#downloadBtn');
-    if (pdfBtn) {
-      await narrate(tour, {
-        title: 'Смета в PDF',
-        text: 'Один клик — файл для клиента или прораба: схема и расчёт в одном документе.',
-        target: pdfBtn,
-        radius: 12,
-        stepLabel: 'Демо',
-      });
-      await cursor.moveTo(pdfBtn);
-      await pause(500);
-      pdfBtn.classList.add('tour-demo-pulse');
-      await pause(700);
-      pdfBtn.classList.remove('tour-demo-pulse');
-    }
-
-    const buy = $('#buyMultiframeBtn') || $('.stat-card-button');
-    if (buy) {
-      await narrate(tour, {
-        title: 'И к покупке панелей',
-        text: 'Когда цифры устраивают — переход в каталог MultiFRAME. Расчёт уже готов, остаётся оформить заказ.',
-        target: buy,
-        radius: 14,
-        stepLabel: 'Демо',
-      });
-      await cursor.moveTo(buy);
-      buy.classList.add('tour-demo-pulse');
-      await pause(900);
-      buy.classList.remove('tour-demo-pulse');
-    }
-
-    await narrate(tour, {
-      title: 'Готово — можно считать своё',
-      text: 'Повторить демо — значок «?» в шапке. Для рисования с нуля подсказки появятся, когда откроете режим схемы.',
-      target: '#appHelpBtn',
-      radius: 22,
-      stepLabel: 'Демо',
-    });
-    await cursor.moveTo($('#appHelpBtn'));
-    await pause(1000);
-
-    cursor.hide();
-    tour.complete();
   } catch (err) {
     if (err?.name !== 'AbortError') console.warn('[onboarding demo]', err);
     demoHooks?.onDemoEnd?.();
   } finally {
+    clearNextWaiters(new DOMException('aborted', 'AbortError'));
     cursor.destroy();
     demoAbort = null;
     if (tour.skipBtn) tour.skipBtn.textContent = 'Пропустить';
+    // restore default next handler for non-demo tours
+    tour.nextBtn.onclick = () => tour.next();
   }
 }
 
@@ -260,8 +318,6 @@ export function setupAppOnboarding(hooks = {}) {
   const start = async ({ force = false } = {}) => {
     if (tour.isActive() && !force) return false;
     if (!force && !tour.shouldAutoStart(APP_TUTORIAL_KEY)) return false;
-
-    // Abort previous demo if any
     demoAbort?.abort?.();
     return runDemo(tour);
   };
@@ -284,10 +340,10 @@ export function setupAppOnboarding(hooks = {}) {
     start({ force: true });
   });
 
-  // Skip should abort demo wait loops
   const origSkip = tour.skip.bind(tour);
   tour.skip = (opts) => {
     demoAbort?.abort?.();
+    clearNextWaiters(new DOMException('aborted', 'AbortError'));
     origSkip(opts);
   };
 
@@ -303,6 +359,7 @@ export function dismissAppTourIfActive() {
   const tour = GuidedTour.getShared();
   if (tour.isActive() && tour.storageKey === APP_TUTORIAL_KEY) {
     demoAbort?.abort?.();
+    clearNextWaiters(new DOMException('aborted', 'AbortError'));
     tour.skip({ silent: true });
     tour.markDone(APP_TUTORIAL_KEY);
   }

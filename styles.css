@@ -2669,7 +2669,7 @@ body.tour-demo-playing .tour-spotlight {
     color: var(--text-secondary);
 }
 
-body.tour-demo-playing .tour-nav {
+body.tour-demo-playing .tour-prev {
     display: none;
 }
 

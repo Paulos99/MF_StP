@@ -68,7 +68,7 @@ export class VirtualCursor {
     }
   }
 
-  async moveTo(target, { duration = 700 } = {}) {
+  async moveTo(target, { duration = 1400 } = {}) {
     this.show();
     const point = target instanceof Element ? centerOf(target) : target;
     if (!point || Number.isNaN(point.x)) return;
@@ -80,10 +80,13 @@ export class VirtualCursor {
       return;
     }
 
+    if (this._moving) cancelAnimationFrame(this._moving);
+
     const fromX = this.x;
     const fromY = this.y;
     const dist = Math.hypot(point.x - fromX, point.y - fromY);
-    const ms = Math.max(280, Math.min(duration, 280 + dist * 0.55));
+    // Slower, distance-aware easing
+    const ms = Math.max(700, Math.min(duration, 550 + dist * 1.15));
 
     await new Promise((resolve) => {
       const start = performance.now();
@@ -104,20 +107,20 @@ export class VirtualCursor {
     });
   }
 
-  async click(target) {
-    if (target instanceof Element) {
-      await this.moveTo(target);
+  async click(target, moveOpts) {
+    if (target instanceof Element || (target && typeof target.x === 'number')) {
+      await this.moveTo(target, moveOpts);
     }
     this.el?.classList.add('is-pressing');
     this.ripple?.classList.remove('is-burst');
     void this.ripple?.offsetWidth;
     this.ripple?.classList.add('is-burst');
-    await sleep(120);
+    await sleep(180);
     if (target instanceof Element) {
       target.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, cancelable: true }));
       target.click();
     }
-    await sleep(160);
+    await sleep(220);
     this.el?.classList.remove('is-pressing');
   }
 }

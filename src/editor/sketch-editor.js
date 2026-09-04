@@ -842,6 +842,46 @@ export class SketchEditor {
     this.render();
   }
 
+  /** Screen (client) coords for a world point — for demo cursor. */
+  worldToClient(wx, wy) {
+    const c = this.worldToCanvas(wx, wy);
+    const rect = this.canvas.getBoundingClientRect();
+    const { w, h } = this._getCanvasSize();
+    const scaleX = w > 0 ? rect.width / w : 1;
+    const scaleY = h > 0 ? rect.height / h : 1;
+    return {
+      x: rect.left + c.x * scaleX,
+      y: rect.top + c.y * scaleY,
+    };
+  }
+
+  /** Simulate a draw tap at world meters (used by onboarding demo). */
+  demoTapWorld(wx, wy) {
+    if (!this.canvas || this.geometryLocked) return;
+    const client = this.worldToClient(wx, wy);
+    this._onPointerDown({ clientX: client.x, clientY: client.y, button: 0 });
+    this._onPointerUp({ clientX: client.x, clientY: client.y, button: 0 });
+  }
+
+  /** Prepare empty canvas framed for a demo room. */
+  prepareDemoDrawView(bounds = { minX: -0.5, minY: -0.5, maxX: 6.5, maxY: 5.5 }) {
+    if (this.closed || this.vertices.length) this.clear();
+    this.geometryLocked = false;
+    this.host?.classList.remove('sketch-geometry-locked');
+    const { w, h } = this._getCanvasSize();
+    const pad = 0.8;
+    const contentW = bounds.maxX - bounds.minX + pad * 2;
+    const contentH = bounds.maxY - bounds.minY + pad * 2;
+    const sx = w / (contentW * PX_PER_M);
+    const sy = h / (contentH * PX_PER_M);
+    this.zoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, Math.min(sx, sy) * 0.9));
+    const cx = (bounds.minX + bounds.maxX) / 2;
+    const cy = (bounds.minY + bounds.maxY) / 2;
+    this.panX = w / 2 - cx * PX_PER_M * this.zoom;
+    this.panY = h / 2 - cy * PX_PER_M * this.zoom;
+    this.render();
+  }
+
   toggleFullscreen() {
     const host = this.host;
     if (!host) return;
