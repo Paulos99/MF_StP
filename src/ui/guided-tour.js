@@ -208,7 +208,7 @@ export class GuidedTour {
     this._spotlightOpts = { pad, radius, aboveFooter };
 
     // Spotlight/card first — grey frame must appear immediately
-    this._position(el, { pad, radius, aboveFooter, sticky: !forceCard });
+    this._position(el, { pad, radius, aboveFooter, sticky: !forceCard, snap: forceCard });
 
     if (el?.scrollIntoView && !skipScroll) {
       try {
@@ -444,11 +444,18 @@ export class GuidedTour {
     const radius = step?.radius ?? 12;
 
     this.spotlight.classList.remove('is-hidden');
+    if (step?.snap) {
+      this.spotlight.classList.add('tour-spotlight--snap');
+    }
     this.spotlight.style.top = `${top}px`;
     this.spotlight.style.left = `${left}px`;
     this.spotlight.style.width = `${Math.max(24, width)}px`;
     this.spotlight.style.height = `${Math.max(24, height)}px`;
     this.spotlight.style.borderRadius = `${radius}px`;
+    if (step?.snap) {
+      void this.spotlight.offsetWidth;
+      this.spotlight.classList.remove('tour-spotlight--snap');
+    }
 
     if (mobile) {
       this.card.style.left = '';

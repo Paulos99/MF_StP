@@ -2609,8 +2609,12 @@ body.sketch-modal-open {
     background: transparent;
     transition: top 0.48s var(--ease-out), left 0.48s var(--ease-out),
       width 0.48s var(--ease-out), height 0.48s var(--ease-out),
-      border-radius 0.48s var(--ease-out), box-shadow 0.4s ease;
+      border-radius 0.48s var(--ease-out), box-shadow 0.4s ease, opacity 0.2s ease;
     z-index: 1;
+}
+
+.tour-spotlight.tour-spotlight--snap {
+    transition: none !important;
 }
 
 body.tour-demo-playing .tour-spotlight {
