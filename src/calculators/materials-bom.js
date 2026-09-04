@@ -278,21 +278,6 @@ export function renderResultsHtml(bom, { mode = null } = {}) {
       </section>`);
   }
 
-  if (bom.total?.dowelsWithReserve || bom.total?.frame?.items?.length) {
-    parts.push(`
-      <section class="rb-block rb-block--total">
-        <header class="rb-block__head">
-          <h3 class="rb-block__title">Итого по крепежу</h3>
-        </header>
-        ${bom.total?.dowelsWithReserve ? `
-          <div class="rb-kv rb-kv--lg">
-            <span>Дюбели всего</span>
-            <strong>${fmtNum(bom.total.dowelsWithReserve)} шт.</strong>
-          </div>` : ''}
-        ${renderFrameBlock('Каркас всего', bom.total?.frame)}
-      </section>`);
-  }
-
   return `<div class="rb">${parts.join('')}</div>`;
 }
 
@@ -345,14 +330,6 @@ export function formatResultsText(bom, room, { mode = null } = {}) {
       lines.push(...formatFrameMaterials(bom.walls.frame, '  '));
     }
     lines.push('');
-  }
-
-  if (bom.total?.dowelsWithReserve) {
-    lines.push(`Дюбели всего: ${bom.total.dowelsWithReserve} шт.`);
-  }
-  if (bom.total?.frame?.items?.length) {
-    lines.push('Каркас итого:');
-    lines.push(...formatFrameMaterials(bom.total.frame, '  '));
   }
 
   return lines.filter((l, i, arr) => !(l === '' && arr[i - 1] === '')).join('\n').trim();
