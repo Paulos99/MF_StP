@@ -113,6 +113,12 @@ div:focus:not([contenteditable="true"]):not(input):not(textarea) {
     --radius-pill: 999px;
     --surface-glass: rgba(255, 255, 255, 0.92);
     --surface-muted: #f4f7f6;
+
+    /* Touch / responsive tokens */
+    --touch-min: 44px;
+    --touch-gap: 8px;
+    --safe-bottom: env(safe-area-inset-bottom, 0px);
+    --mobile-footer-h: 72px;
 }
 
 /* Чекбоксы в светлой теме — фирменный зелёный */
@@ -5787,9 +5793,16 @@ body.mobile-sidebar-open .workspace-sidebar {
   line-height: 1.4;
 }
 
+.entry-flow {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
 .entry-block {
   display: flex;
   flex-direction: column;
+  gap: 0;
   transition: opacity 0.28s ease, transform 0.28s ease;
 }
 
@@ -5799,23 +5812,6 @@ body.mobile-sidebar-open .workspace-sidebar {
 
 .entry-picker.has-mode .entry-block:not(.is-open):hover {
   opacity: 0.9;
-}
-
-.entry-picker.has-mode ~ .entry-block--area:not(.is-open) {
-  opacity: 0.58;
-}
-
-.entry-picker.has-mode ~ .entry-block--area:not(.is-open):hover {
-  opacity: 0.9;
-}
-
-.entry-block--area {
-  margin-top: 10px;
-  padding-bottom: 4px;
-}
-
-.shared-reveal.is-open + .entry-block--area {
-  margin-top: 12px;
 }
 
 .entry-card {
@@ -5906,14 +5902,14 @@ body.theme-dark .entry-block.is-open .entry-card {
   background: rgba(1, 100, 79, 0.18);
 }
 
-.entry-block__collapse,
+.entry-panel-slot,
 .shared-reveal__collapse {
   display: grid;
   grid-template-rows: 0fr;
   transition: grid-template-rows 0.38s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
-.entry-block.is-open .entry-block__collapse,
+.entry-panel-slot.is-open,
 .shared-reveal.is-open .shared-reveal__collapse {
   grid-template-rows: 1fr;
 }
@@ -5932,14 +5928,14 @@ body.theme-dark .entry-block.is-open .entry-card {
   pointer-events: none;
 }
 
-.entry-block.is-open .entry-panel {
+.entry-panel-slot.is-open .entry-panel {
   opacity: 1;
   transform: none;
   pointer-events: auto;
 }
 
 .shared-reveal {
-  margin-top: 4px;
+  margin-top: 0;
 }
 
 .shared-reveal .shared-calc-options {
@@ -5956,7 +5952,7 @@ body.theme-dark .entry-block.is-open .entry-card {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .entry-block__collapse,
+  .entry-panel-slot,
   .shared-reveal__collapse,
   .entry-panel,
   .shared-reveal .shared-calc-options,

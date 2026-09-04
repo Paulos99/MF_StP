@@ -568,9 +568,30 @@ function updateSurfaceGroupsUi() {
   }
 }
 
+/** Держит форму режима и «Что считать» рядом: shared сразу под открытым panel-slot. */
+function placeSharedReveal(mode) {
+  const shared = $('sharedReveal');
+  const flow = $('entryFlow');
+  if (!shared || !flow) return;
+
+  if (mode === 'dims' || mode === 'draw') {
+    const slot = document.querySelector(`.entry-panel-slot[data-entry="${mode}"]`);
+    if (slot && shared.previousElementSibling !== slot) {
+      slot.after(shared);
+    }
+    return;
+  }
+
+  // area / нет режима — паркуем в конце потока, чтобы не клинить между карточками
+  if (shared.parentElement !== flow || flow.lastElementChild !== shared) {
+    flow.appendChild(shared);
+  }
+}
+
 function syncModePanelsUi() {
   const mode = state.inputMode;
   const entry = $('entryPicker');
+  const flow = $('entryFlow');
   const bar = $('activeModeBar');
   const label = $('activeModeLabel');
 
@@ -578,6 +599,7 @@ function syncModePanelsUi() {
     entry.hidden = false;
     entry.classList.toggle('has-mode', !!mode);
   }
+  if (flow) flow.classList.toggle('has-mode', !!mode);
   // Аккордеон заменяет «сменить способ» — бар прячем
   if (bar) bar.hidden = true;
   if (label) label.textContent = MODE_LABELS[mode] || '—';
@@ -585,21 +607,24 @@ function syncModePanelsUi() {
   document.querySelectorAll('.entry-block').forEach((block) => {
     const isOpen = !!mode && block.dataset.entry === mode;
     block.classList.toggle('is-open', isOpen);
-    const btn = block.querySelector('.entry-card');
-    btn?.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
-    const collapse = block.querySelector('.entry-block__collapse');
-    if (collapse) {
-      if (isOpen) collapse.removeAttribute('inert');
-      else collapse.setAttribute('inert', '');
-    }
+    block.querySelector('.entry-card')?.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
   });
 
-  const openBlock = mode
-    ? document.querySelector(`.entry-block[data-entry="${mode}"]`)
+  document.querySelectorAll('.entry-panel-slot').forEach((slot) => {
+    const isOpen = !!mode && slot.dataset.entry === mode;
+    slot.classList.toggle('is-open', isOpen);
+    if (isOpen) slot.removeAttribute('inert');
+    else slot.setAttribute('inert', '');
+  });
+
+  placeSharedReveal(mode);
+
+  const openSlot = mode
+    ? document.querySelector(`.entry-panel-slot[data-entry="${mode}"]`)
     : null;
-  if (openBlock && typeof openBlock.scrollIntoView === 'function') {
+  if (openSlot && typeof openSlot.scrollIntoView === 'function') {
     requestAnimationFrame(() => {
-      openBlock.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+      openSlot.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
     });
   }
 
