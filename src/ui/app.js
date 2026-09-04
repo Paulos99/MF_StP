@@ -741,12 +741,20 @@ function maybeStartSketchTour() {
   if (onboardingDemoActive) return;
   const onboarding = sketchEditor?.onboarding;
   if (!onboarding?.shouldAutoStart?.()) return;
-  setTimeout(() => {
+
+  const tryStart = (attempt = 0) => {
     if (onboardingDemoActive) return;
     if (state.inputMode !== 'draw') return;
-    if (GuidedTour.getShared().isActive()) return;
+    const tour = GuidedTour.getShared();
+    if (tour.isActive()) {
+      // Wait until app demo / other tour fully tears down
+      if (attempt < 10) setTimeout(() => tryStart(attempt + 1), 200);
+      return;
+    }
     onboarding.start(false);
-  }, 380);
+  };
+
+  setTimeout(() => tryStart(0), 380);
 }
 
 function setupModeToggles() {

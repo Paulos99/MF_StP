@@ -5,7 +5,7 @@ import {
   tourIsMobileLayout,
 } from '../ui/guided-tour.js';
 
-export const SKETCH_TUTORIAL_KEY = 'mf-sketch-tutorial-v1';
+export const SKETCH_TUTORIAL_KEY = 'mf-sketch-tutorial-v2';
 
 export const SKETCH_TUTORIAL_STEPS = [
   {
@@ -106,6 +106,7 @@ export class SketchOnboarding {
       force,
       storageKey: SKETCH_TUTORIAL_KEY,
       startIndex,
+      allowSkip: false,
       onComplete: () => {
         this.active = false;
         this.onComplete?.();

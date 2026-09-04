@@ -5,7 +5,6 @@ import {
   tourIsMobileLayout,
 } from './guided-tour.js';
 import { VirtualCursor, sleep } from './virtual-cursor.js';
-import { SKETCH_TUTORIAL_KEY } from '../editor/sketch-onboarding.js';
 
 export const APP_TUTORIAL_KEY = 'mf-app-tutorial-v6';
 
@@ -486,11 +485,9 @@ async function runDemo(tour) {
       storageKey: APP_TUTORIAL_KEY,
       demoMode: true,
       onComplete: () => {
-        try { localStorage.setItem(SKETCH_TUTORIAL_KEY, 'done'); } catch { /* ignore */ }
         demoHooks?.onDemoEnd?.();
       },
       onSkip: () => {
-        try { localStorage.setItem(SKETCH_TUTORIAL_KEY, 'done'); } catch { /* ignore */ }
         demoHooks?.onDemoEnd?.();
         demoHooks?.resetAfterDemo?.();
       },

@@ -65,6 +65,7 @@ export class GuidedTour {
     this.active = false;
     this.storageKey = null;
     this.demoMode = false;
+    this.allowSkip = true;
     this._wasSidebarOpen = false;
     this._onComplete = null;
     this._onSkip = null;
@@ -82,7 +83,7 @@ export class GuidedTour {
     };
     this._mq = window.matchMedia(MOBILE_MQ);
     this._boundMq = () => {
-      if (this.active && !this.demoMode) this.skip({ silent: false });
+      if (this.active && !this.demoMode && this.allowSkip) this.skip({ silent: false });
     };
 
     this._ensureDom();
@@ -107,7 +108,7 @@ export class GuidedTour {
 
   /**
    * @param {Array} steps
-   * @param {{ force?: boolean, storageKey?: string, onComplete?: Function, onSkip?: Function, startIndex?: number, demoMode?: boolean }} opts
+   * @param {{ force?: boolean, storageKey?: string, onComplete?: Function, onSkip?: Function, startIndex?: number, demoMode?: boolean, allowSkip?: boolean }} opts
    */
   async start(steps, opts = {}) {
     const {
@@ -117,6 +118,7 @@ export class GuidedTour {
       onSkip = null,
       startIndex = 0,
       demoMode = false,
+      allowSkip = true,
     } = opts;
 
     if (!steps?.length && !demoMode) return false;
@@ -132,6 +134,7 @@ export class GuidedTour {
     this._onComplete = onComplete;
     this._onSkip = onSkip;
     this.demoMode = demoMode;
+    this.allowSkip = allowSkip;
     this.stepIndex = Math.max(0, Math.min(startIndex, Math.max(0, this.steps.length - 1)));
     this._wasSidebarOpen = document.body.classList.contains('mobile-sidebar-open');
     this.active = true;
@@ -149,6 +152,8 @@ export class GuidedTour {
     this.prevBtn.hidden = demoMode;
     this.nextBtn.hidden = false;
     this.stepEl.hidden = false;
+    this.skipBtn.hidden = !allowSkip;
+    this.skipBtn.textContent = 'Пропустить';
     this._bindGlobal();
 
     if (!demoMode && this.steps.length) {
@@ -347,6 +352,7 @@ export class GuidedTour {
   _onKey(e) {
     if (!this.active) return;
     if (e.key === 'Escape') {
+      if (!this.allowSkip) return;
       e.preventDefault();
       this.skip();
     } else if (e.key === 'ArrowRight' || e.key === 'Enter') {
@@ -477,6 +483,8 @@ export class GuidedTour {
     this.steps = [];
     this.stepIndex = 0;
     this.demoMode = false;
+    this.allowSkip = true;
+    if (this.skipBtn) this.skipBtn.hidden = false;
     this._cardPos = null;
     this._cardLocked = false;
     this._spotlightTarget = null;
