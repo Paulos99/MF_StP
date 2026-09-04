@@ -285,9 +285,10 @@ function syncChromeUi() {
   if ($('shareBtnSecondary')) $('shareBtnSecondary').disabled = !ready;
 
   // В draw до замкнутого контура — только высота/фото, без «что считать»
+  // В area поверхности уже заданы полями выше — блок не нужен
   const sharedReveal = $('sharedReveal');
   const shared = $('sharedCalcOptions');
-  const showShared = !!mode && !(mode === 'draw' && !drawReady);
+  const showShared = !!mode && mode !== 'area' && !(mode === 'draw' && !drawReady);
   if (sharedReveal) {
     sharedReveal.classList.toggle('is-open', showShared);
     const collapse = sharedReveal.querySelector('.shared-reveal__collapse');
@@ -501,7 +502,7 @@ function renderAreaWallsList() {
 }
 
 function addAreaWall() {
-  state.areaWalls.push({ id: `aw-${Date.now()}`, area: 0, enabled: true });
+  state.areaWalls.push({ id: `aw-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, area: 0, enabled: true });
   renderAreaWallsList();
   updateSurfaceGroupsUi();
   onExplicitChange();
@@ -773,10 +774,6 @@ function updateResultsPreview() {
   card.classList.add('is-expanded');
   card.hidden = false;
   preview.style.maxHeight = 'none';
-
-  if (!state.hasResults) {
-    textEl.textContent = 'Выберите способ расчёта слева — здесь появятся детали.';
-  }
 }
 
 function setupResultsExpand() {
@@ -1024,6 +1021,16 @@ function validateBeforeCalc() {
   }
   syncFormToRoom();
   const f = els.form;
+
+  if (state.inputMode === 'area') {
+    const ceilingArea = parseFloat(f.areaOnlyInput?.value) || 0;
+    const walls = state.areaWalls.filter((w) => w.enabled && w.area > 0);
+    if (ceilingArea <= 0 && walls.length === 0) {
+      return ['Укажите площадь потолка или хотя бы одну стену'];
+    }
+    return [];
+  }
+
   const calcCeiling = f.calcCeiling.checked;
   const selectedWallIds = readSelectedWallIds();
 
@@ -1031,17 +1038,11 @@ function validateBeforeCalc() {
     return ['Выберите хотя бы одну поверхность для расчёта'];
   }
 
-  const useArea = state.inputMode === 'area' || (state.inputMode === 'dims' && state.forceAreaBySize);
+  const useArea = state.inputMode === 'dims' && state.forceAreaBySize;
   if (useArea) {
     if (calcCeiling) {
-      const area = state.inputMode === 'area'
-        ? parseFloat(f.areaOnlyInput?.value)
-        : (parseFloat(f.quickLength?.value) || 0) * (parseFloat(f.quickWidth?.value) || 0);
+      const area = (parseFloat(f.quickLength?.value) || 0) * (parseFloat(f.quickWidth?.value) || 0);
       if (!area || area <= 0) return ['Укажите площадь потолка в м²'];
-    }
-    if (selectedWallIds.length > 0 && state.inputMode === 'area') {
-      const invalid = state.areaWalls.some((w) => w.enabled && selectedWallIds.includes(w.id) && (!w.area || w.area <= 0));
-      if (invalid) return ['Укажите площадь для каждой выбранной стены'];
     }
     return [];
   }
@@ -1128,13 +1129,26 @@ function runCalculation(options = {}) {
   if (!silent) showValidationErrors([]);
 
   const f = els.form;
-  state.options = {
-    calcCeiling: f.calcCeiling.checked,
-    selectedWallIds: readSelectedWallIds(),
-    calcWalls: readSelectedWallIds().length > 0,
-    ceilingMounting: f.ceilingMounting.value,
-    wallMounting: f.wallMounting.value,
-  };
+  if (state.inputMode === 'area') {
+    const ceilingArea = parseFloat(f.areaOnlyInput?.value) || 0;
+    const wallIds = state.areaWalls.filter((w) => w.enabled && w.area > 0).map((w) => w.id);
+    state.options = {
+      calcCeiling: ceilingArea > 0,
+      selectedWallIds: wallIds,
+      calcWalls: wallIds.length > 0,
+      // По площади нет геометрии для каркаса — только бескаркасный
+      ceilingMounting: 'ceiling_frameless',
+      wallMounting: 'wall_frameless',
+    };
+  } else {
+    state.options = {
+      calcCeiling: f.calcCeiling.checked,
+      selectedWallIds: readSelectedWallIds(),
+      calcWalls: readSelectedWallIds().length > 0,
+      ceilingMounting: f.ceilingMounting.value,
+      wallMounting: f.wallMounting.value,
+    };
+  }
 
   let calcRoom = state.room;
   const useAreaPath = state.inputMode === 'area' || (state.inputMode === 'dims' && state.forceAreaBySize);
@@ -1198,12 +1212,16 @@ function runCalculation(options = {}) {
   if (state.options.selectedWallIds.length > 0 && state.inputMode === 'area') {
     const walls = state.areaWalls.filter((w) => w.enabled && w.area > 0);
     state.wallResult = {
-      wallResults: walls.map((w, i) => ({
-        wall: { id: w.id, label: `Стена ${i + 1}`, length: Math.sqrt(w.area) },
-        netArea: w.area,
-        panels: [],
-        openings: [],
-      })),
+      wallResults: walls.map((w, i) => {
+        const panelCount = Math.ceil(w.area / PANEL_COVERAGE_AREA);
+        return {
+          wall: { id: w.id, label: `Стена ${i + 1}`, length: Math.sqrt(w.area) },
+          netArea: w.area,
+          panelCount,
+          panels: [],
+          openings: [],
+        };
+      }),
       stats: buildAreaWallStats(walls),
     };
   } else if (state.options.selectedWallIds.length > 0 && !useAreaPath) {
@@ -1231,12 +1249,16 @@ function runCalculation(options = {}) {
       ];
     }
     state.wallResult = {
-      wallResults: walls.map((w, i) => ({
-        wall: { id: w.id, label: `Стена ${i + 1}`, length: Math.sqrt(Math.max(w.area, 0.01)) },
-        netArea: w.area,
-        panels: [],
-        openings: [],
-      })),
+      wallResults: walls.map((w, i) => {
+        const panelCount = Math.ceil(w.area / PANEL_COVERAGE_AREA);
+        return {
+          wall: { id: w.id, label: `Стена ${i + 1}`, length: Math.sqrt(Math.max(w.area, 0.01)) },
+          netArea: w.area,
+          panelCount,
+          panels: [],
+          openings: [],
+        };
+      }),
       stats: buildAreaWallStats(walls),
     };
   }

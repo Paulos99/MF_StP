@@ -98,9 +98,13 @@ export function buildBOM({ room, ceilingResult, wallResult, options }) {
 /** Статистика по одной стене для PDF и отчётов */
 export function buildWallSurfaceStats(wr, mountingType, wallHeight) {
   const panels = wr.panels ?? [];
-  const total = panels.length;
-  const fullPanels = panels.filter((p) => !p.isCut).length;
-  const cutPanels = panels.filter((p) => p.isCut).length;
+  const total = wr.panelCount ?? panels.length;
+  const fullPanels = wr.panelCount != null
+    ? wr.panelCount
+    : panels.filter((p) => !p.isCut).length;
+  const cutPanels = wr.panelCount != null
+    ? 0
+    : panels.filter((p) => p.isCut).length;
   const rules = MOUNTING_RULES[mountingType] ?? MOUNTING_RULES.wall_frameless;
   const dowelsPerPanel = rules.dowelsPerPanel ?? RESERVES.dowelsPerPanel;
   const panelReserve = rules.reserve?.panels ?? RESERVES.panels;
@@ -110,7 +114,7 @@ export function buildWallSurfaceStats(wr, mountingType, wallHeight) {
   const frame =
     mountingType === 'wall_framed'
       ? calculateFrameMaterials('wall_framed', wr.wall.length, wallHeight, {
-          panelCount: panels.length,
+          panelCount: total,
           openings: wr.openings ?? [],
         })
       : null;
@@ -154,7 +158,7 @@ export function formatResultsText(bom, room) {
     lines.push(`${s.fullPanels ?? 0} целых + ${s.cutPanels ?? 0} подрез. · дюбели ${s.dowels.withReserve}`);
     if (bom.walls.wallResults?.length) {
       bom.walls.wallResults.forEach((wr) => {
-        const n = wr.panels?.length ?? 0;
+        const n = wr.panelCount ?? wr.panels?.length ?? 0;
         lines.push(`  ${wr.wall.label}: ${n} пан.`);
       });
     }
