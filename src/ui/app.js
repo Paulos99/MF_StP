@@ -990,7 +990,9 @@ function setSchemeView(view) {
   workspace?.setAttribute('data-view', state.activeView);
 
   document.querySelectorAll('#resultsTabs .tab-btn').forEach((btn) => {
-    btn.classList.toggle('active', btn.dataset.tab === state.activeView);
+    const on = btn.dataset.tab === state.activeView;
+    btn.classList.toggle('active', on);
+    btn.setAttribute('aria-selected', on ? 'true' : 'false');
   });
 
   const resultsStage = $('resultsStage');

@@ -218,9 +218,9 @@
                 <span id="schemeStatus" class="scheme-status" hidden></span>
               </div>
               <div class="scheme-header__right">
-                <div class="results-tabs results-tabs--underline" id="resultsTabs">
-                  <button type="button" class="tab-btn active" data-tab="plan">План</button>
-                  <button type="button" class="tab-btn" data-tab="walls" hidden>Стены · проёмы</button>
+                <div class="results-tabs results-tabs--underline" id="resultsTabs" role="tablist" aria-label="Вид схемы">
+                  <button type="button" class="tab-btn active" data-tab="plan" role="tab" aria-selected="true">Потолок</button>
+                  <button type="button" class="tab-btn" data-tab="walls" role="tab" aria-selected="false" hidden>Стены</button>
                 </div>
                 <div class="plan-overlay-toggles" id="planOverlayToggles">
                   <label class="canvas-checkbox"><input type="checkbox" id="showNumbers" checked /> № панелей</label>
