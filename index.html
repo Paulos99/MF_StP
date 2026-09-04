@@ -340,37 +340,37 @@
                 <span class="stat-card-button__text">Купить MultiFRAME</span>
               </a>
             </div>
+          </div>
+        </div>
 
-            <div class="secondary-toolbar" hidden>
-              <button type="button" class="btn-link secondary-results-toggle" id="resultsExpandBtn" hidden>Подробнее: крепёж и каркас</button>
-              <button type="button" class="btn-share-compact" id="shareBtnSecondary" title="Скопировать ссылку на расчёт">Поделиться</button>
-              <button type="button" class="btn-print btn-print--compact" id="downloadBtn" disabled>
+        <aside class="workspace-results" id="resultsAside" hidden>
+          <div class="workspace-results__scroll">
+            <div class="workspace-results__actions">
+              <button type="button" class="btn btn-primary workspace-results__btn" id="downloadBtn" disabled>
                 <svg class="btn-print-arrow" width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
                   <path d="M7 9L12 14L17 9" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
                   <path d="M7 14L12 19L17 14" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
                 </svg>
-                PDF
+                Скачать PDF
+              </button>
+              <button type="button" class="btn btn-secondary workspace-results__btn" id="shareBtnSecondary" title="Скопировать ссылку на расчёт">
+                Поделиться
               </button>
             </div>
 
-            <div class="results-card card" hidden>
+            <div class="results-card card is-expanded">
               <div class="results-header">
                 <h2>Подробности</h2>
-                <button type="button" class="btn-share-compact" id="shareBtn" title="Скопировать ссылку на расчёт" hidden>
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-                    <path d="M18 8C19.6569 8 21 6.65685 21 5C21 3.34315 19.6569 2 18 2C16.3431 2 15 3.34315 15 5C15 5.12548 15.0077 5.24917 15.0227 5.37061L8.08259 9.19346C7.54305 8.47607 6.72488 8 5.8 8C4.14315 8 2.8 9.34315 2.8 11C2.8 12.6569 4.14315 14 5.8 14C6.72488 14 7.54305 13.5239 8.08259 12.8065L15.0227 16.6294C15.0077 16.7508 15 16.8745 15 17C15 18.6569 16.3431 20 18 20C19.6569 20 21 18.6569 21 17C21 15.3431 19.6569 14 18 14C17.0751 14 16.2569 14.4761 15.7174 15.1935L8.77732 11.3706C8.79229 11.2492 8.8 11.1255 8.8 11C8.8 10.8745 8.79229 10.7508 8.77732 10.6294L15.7174 6.80654C16.2569 7.52393 17.0751 8 18 8Z" fill="currentColor"/>
-                  </svg>
-                  Поделиться
-                </button>
-                <button type="button" class="btn-link results-collapse-btn" id="resultsCollapseBtn" hidden>Свернуть</button>
+                <button type="button" class="btn-share-compact" id="shareBtn" hidden aria-hidden="true"></button>
+                <button type="button" class="btn-link results-collapse-btn" id="resultsCollapseBtn" hidden></button>
+                <button type="button" class="btn-link secondary-results-toggle" id="resultsExpandBtn" hidden></button>
               </div>
               <div class="results-preview" id="resultsPreview">
-                <div id="resultsText" class="results-text"></div>
-                <div class="results-preview__fade" aria-hidden="true"></div>
+                <div id="resultsText" class="results-text">Выполните расчёт — здесь появятся детали.</div>
               </div>
             </div>
           </div>
-        </div>
+        </aside>
       </div>
     </main>
 

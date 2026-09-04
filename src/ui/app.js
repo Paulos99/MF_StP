@@ -274,16 +274,14 @@ function syncChromeUi() {
   document.querySelector('.workspace-section--panel-info')?.toggleAttribute('hidden', true);
   $('projectLoadedBanner')?.classList.toggle('is-compact', true);
 
-  const resultsCard = document.querySelector('.results-card');
-  const secondary = document.querySelector('.secondary-toolbar');
+  const resultsAside = $('resultsAside');
   const stats = document.querySelector('.workspace-stats');
 
-  if (resultsCard) resultsCard.hidden = !ready;
-  if (secondary) secondary.hidden = !ready;
+  if (resultsAside) resultsAside.hidden = !ready;
   if (stats) stats.classList.toggle('is-idle', !ready);
 
-  $('shareBtnSecondary')?.toggleAttribute('hidden', !ready);
-  $('downloadBtn')?.toggleAttribute('hidden', !ready);
+  $('downloadBtn')?.toggleAttribute('disabled', !ready);
+  if ($('downloadBtn')) $('downloadBtn').disabled = !ready;
 
   // В draw до замкнутого контура — только высота/фото, без «что считать»
   const shared = $('sharedCalcOptions');
@@ -297,8 +295,8 @@ function syncChromeUi() {
     !ready || !isSketchMode() || state.activeView !== 'plan'
   );
 
-  // Тема оставляем всегда, но подпись короче на empty
   document.querySelector('.theme-toggle__label')?.toggleAttribute('hidden', !mode);
+  document.body.classList.toggle('has-results-aside', ready && !isMobileLayout());
 }
 
 function clearResultsUi(message = '') {
@@ -727,49 +725,19 @@ function updateResultsPreview() {
   const card = document.querySelector('.results-card');
   const preview = $('resultsPreview');
   const textEl = $('resultsText');
-  const btn = $('resultsExpandBtn');
-  const collapseBtn = $('resultsCollapseBtn');
-  if (!card || !preview || !textEl || !btn) return;
+  if (!card || !preview || !textEl) return;
 
-  preview.style.maxHeight = '';
+  card.classList.add('is-expanded');
+  card.hidden = false;
+  preview.style.maxHeight = 'none';
 
   if (!state.hasResults) {
-    card.classList.remove('is-expanded');
-    btn.hidden = true;
-    if (collapseBtn) collapseBtn.hidden = true;
-    return;
+    textEl.textContent = 'Выполните расчёт — здесь появятся детали.';
   }
-
-  // Главное — три карточки; детали свёрнуты (не дублировать итог)
-  card.classList.remove('is-expanded');
-  btn.hidden = false;
-  btn.textContent = 'Подробнее: крепёж и каркас';
-  if (collapseBtn) collapseBtn.hidden = true;
 }
 
 function setupResultsExpand() {
-  const btn = $('resultsExpandBtn');
-  const collapseBtn = $('resultsCollapseBtn');
-  const card = document.querySelector('.results-card');
-  const preview = $('resultsPreview');
-  const textEl = $('resultsText');
-  if (!btn || !card || !preview || !textEl) return;
-
-  const setExpanded = (expanding) => {
-    card.classList.toggle('is-expanded', expanding);
-    btn.textContent = expanding ? 'Скрыть подробности' : 'Подробнее: крепёж и каркас';
-    if (collapseBtn) collapseBtn.hidden = !expanding;
-    if (expanding) {
-      preview.style.maxHeight = `${Math.max(textEl.scrollHeight + 8, 80)}px`;
-    } else {
-      preview.style.maxHeight = '';
-    }
-  };
-
-  btn.addEventListener('click', () => {
-    setExpanded(!card.classList.contains('is-expanded'));
-  });
-  collapseBtn?.addEventListener('click', () => setExpanded(false));
+  // Правая колонка всегда показывает подробности целиком — без сворачивания
 }
 
 function setupFormListeners() {

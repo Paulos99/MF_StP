@@ -88,9 +88,11 @@ export class Room {
 
   rebuildWalls() {
     const edges = getEdges(this.vertices);
+    const n = this.vertices.length;
     this.walls = edges.map((e, i) => {
-      const from = e.a.label || labelForIndex(i);
-      const to = e.b.label || labelForIndex((i + 1) % Math.max(this.vertices.length, 1));
+      const from = String(e.a?.label || labelForIndex(i));
+      const nextIdx = (i + 1) % Math.max(n, 1);
+      const to = String(e.b?.label || this.vertices[nextIdx]?.label || labelForIndex(nextIdx));
       return new WallSegment({
         id: `wall-${i}`,
         label: `Стена ${from}${to}`,
