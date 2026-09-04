@@ -1165,6 +1165,12 @@ function runQuickAreaCalc(area) {
   const withReserve = Math.ceil(panels * (1 + RESERVES.panels));
   const dowels = Math.ceil(panels * RESERVES.dowelsPerPanel * (1 + RESERVES.dowels));
   const cost = withReserve * PANEL.priceRub;
+  // Не оставляем геометрические схемы от предыдущего режима —
+  // иначе PDF подхватит старый план/стены вместо оценки по площади.
+  state.ceilingResult = null;
+  state.wallResult = null;
+  state.ceilingCalc = null;
+  state.calcRoom = null;
   state.bom = {
     total: {
       panelsWithReserve: withReserve,
@@ -1188,6 +1194,8 @@ function runQuickAreaCalc(area) {
       },
     },
     walls: null,
+    ceilingMounting: 'ceiling_frameless',
+    wallMounting: 'wall_frameless',
   };
   state.hasResults = true;
   state.resultsStale = false;
@@ -1520,17 +1528,40 @@ async function handleShare() {
   }
 }
 
+function isAreaEstimateMode() {
+  return state.inputMode === 'area' || (state.inputMode === 'dims' && state.forceAreaBySize);
+}
+
 async function handlePDF() {
   if (!state.bom) {
     alert('Сначала выполните расчёт');
     return;
   }
   const { exportCalculationPDF } = await import('../export/pdf-export.js');
+  const areaEstimate = isAreaEstimateMode();
+
+  if (areaEstimate) {
+    const wallSurfaces = (state.wallResult?.wallResults ?? []).map((wr) => ({
+      wallResult: wr,
+      image: null,
+    }));
+    await exportCalculationPDF({
+      bom: state.bom,
+      room: state.room,
+      ceilingImage: null,
+      wallSurfaces,
+      planImage: null,
+      areaEstimate: true,
+    });
+    return;
+  }
+
   syncFormToRoom();
   renderPlanEditors();
   const planImage = sketchEditor?.canvas?.toDataURL?.('image/png') ?? null;
   renderCeiling();
-  const ceilingImage = state.ceilingResult ? ceilingViz.exportToImage() : null;
+  const ceilingImage =
+    state.ceilingResult && state.ceilingCalc ? ceilingViz.exportToImage() : null;
   const wallSurfaces = [];
   if (state.wallResult) {
     for (const wr of state.wallResult.wallResults) {
@@ -1548,6 +1579,7 @@ async function handlePDF() {
     ceilingImage,
     wallSurfaces,
     planImage,
+    areaEstimate: false,
   });
 }
 
