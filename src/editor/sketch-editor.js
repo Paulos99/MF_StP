@@ -33,7 +33,8 @@ const GRID_MAJOR_COLOR = 'rgba(0, 0, 0, 0.22)';
 const PX_PER_M = 40;
 const MIN_ZOOM = 0.1;
 const MAX_ZOOM = 4;
-const LONG_PRESS_MS = 800;
+const LONG_PRESS_MS = 500;
+const TOUCH_PAN_THRESHOLD = 12;
 const MIN_VERTEX_DIST = 0.5;
 const PREVIEW_LERP = 0.22;
 const PANEL_SETTLE_MS = 2500;
@@ -125,7 +126,8 @@ export class SketchEditor {
     this._panStart = null;
     this._pinch = null;
     this._touchPanCandidate = null;
-    this._touchMode = null; // 'pan' | 'pinch' | null
+    this._touchMode = null; // 'pan' | 'pinch' | 'pendingPan' | null
+    this._touchHits = false;
     this._resizeObserver = null;
 
     this.bgImage = null;
@@ -290,7 +292,10 @@ export class SketchEditor {
       el?.addEventListener('input', () => this._applyOpeningPropsFromForm());
     });
 
-    this.canvas.addEventListener('mousedown', (e) => this._onPointerDown(e));
+    this.canvas.addEventListener('mousedown', (e) => {
+      this._touchHits = false;
+      this._onPointerDown(e);
+    });
     this.canvas.addEventListener('mousemove', (e) => this._onPointerMove(e));
     window.addEventListener('mouseup', (e) => this._onPointerUp(e));
     this.canvas.addEventListener('wheel', (e) => this._onWheel(e), { passive: false });
@@ -455,6 +460,9 @@ export class SketchEditor {
       setTimeout(() => { if (!this.openingsModalOpen) this.openingsModal.hidden = true; }, 280);
     }
     this.render();
+    // Сразу пересчитать стены с проёмами — иначе схема на вкладке «Стены» остаётся старой
+    // (особенно в dims, где onRoomChange раньше не доходил до auto-recalc).
+    this.onGeometrySettle?.({ reason: 'openings-done' });
   }
 
   _selectWall(wallId) {
@@ -907,12 +915,26 @@ export class SketchEditor {
     };
   }
 
+  _isCoarsePointer() {
+    return this._touchHits
+      || window.matchMedia?.('(pointer: coarse)')?.matches
+      || (typeof navigator !== 'undefined' && navigator.maxTouchPoints > 1);
+  }
+
   _vertexHitRadius() {
-    return Math.max(22, 14 * Math.sqrt(this.zoom));
+    const coarse = this._isCoarsePointer();
+    const min = coarse ? 28 : 22;
+    const scale = coarse ? 16 : 14;
+    const boost = coarse ? 6 : 0;
+    return Math.max(min, scale * Math.sqrt(this.zoom)) + boost;
   }
 
   _edgeHitThreshold() {
-    return Math.max(16, 12 * this.zoom);
+    const coarse = this._isCoarsePointer();
+    const min = coarse ? 22 : 16;
+    const scale = coarse ? 14 : 12;
+    const boost = coarse ? 4 : 0;
+    return Math.max(min, scale * this.zoom) + boost;
   }
 
   _pickTarget(cx, cy) {
@@ -941,9 +963,10 @@ export class SketchEditor {
     }
 
     if (this.closed) {
-      const edge = this._hitEdge(cx, cy, this._edgeHitThreshold());
+      const edgeThresh = this._edgeHitThreshold();
+      const edge = this._hitEdge(cx, cy, edgeThresh);
       if (edge !== null) return { type: 'edge', index: edge };
-      const diag = this._hitDiagonal(cx, cy, 10);
+      const diag = this._hitDiagonal(cx, cy, edgeThresh);
       if (diag) return { type: 'diagonal', data: diag };
     }
 
@@ -1009,7 +1032,9 @@ export class SketchEditor {
 
   _onTouchStart(e) {
     e.preventDefault();
+    this._touchHits = true;
     if (e.touches.length >= 2) {
+      this._touchPanCandidate = null;
       this._beginPinch(e);
       return;
     }
@@ -1019,13 +1044,12 @@ export class SketchEditor {
     const { cx, cy } = this._clientToCanvas(t.clientX, t.clientY);
     const target = this._pickTarget(cx, cy);
 
-    // One-finger pan on empty space when contour is closed (or always when zoomed)
+    // One-finger pan on empty space when contour is closed
     if (this.closed && !target && !this.openingsModalOpen && !this.bgAdjustMode) {
       this._touchMode = 'pan';
       this._panning = true;
       this._panStart = { x: t.clientX, y: t.clientY, panX: this.panX, panY: this.panY };
       this._touchPanCandidate = null;
-      // Still clear selection like empty tap
       this._selectedEdge = null;
       this._selectedDiagonal = null;
       this.keypad.hide();
@@ -1034,13 +1058,35 @@ export class SketchEditor {
       return;
     }
 
+    // Open contour: short tap places a point; drag past threshold pans
+    if (
+      !this.closed
+      && !target
+      && !this.openingsModalOpen
+      && !this.bgAdjustMode
+      && !this.geometryLocked
+    ) {
+      this._touchMode = 'pendingPan';
+      this._touchPanCandidate = {
+        x: t.clientX,
+        y: t.clientY,
+        panX: this.panX,
+        panY: this.panY,
+        cx,
+        cy,
+      };
+      return;
+    }
+
     this._touchMode = null;
+    this._touchPanCandidate = null;
     this._onPointerDown({ clientX: t.clientX, clientY: t.clientY, button: 0 });
   }
 
   _onTouchMove(e) {
     e.preventDefault();
     if (e.touches.length >= 2) {
+      this._touchPanCandidate = null;
       if (this._touchMode !== 'pinch') this._beginPinch(e);
       const t0 = e.touches[0];
       const t1 = e.touches[1];
@@ -1068,6 +1114,20 @@ export class SketchEditor {
     }
 
     const t = e.touches[0];
+    if (this._touchMode === 'pendingPan' && this._touchPanCandidate) {
+      const cand = this._touchPanCandidate;
+      const dist = Math.hypot(t.clientX - cand.x, t.clientY - cand.y);
+      if (dist >= TOUCH_PAN_THRESHOLD) {
+        this._touchMode = 'pan';
+        this._panning = true;
+        this._panStart = { x: cand.x, y: cand.y, panX: cand.panX, panY: cand.panY };
+        this._touchPanCandidate = null;
+        this._previewPoint = null;
+      } else {
+        return;
+      }
+    }
+
     if (this._touchMode === 'pan' || this._panning) {
       this._onPointerMove({ clientX: t.clientX, clientY: t.clientY });
       return;
@@ -1087,9 +1147,22 @@ export class SketchEditor {
       this._pinch = null;
       this._panning = true;
       this._panStart = { x: t.clientX, y: t.clientY, panX: this.panX, panY: this.panY };
+      this._touchPanCandidate = null;
       return;
     }
+
+    // Tap (no drag) on empty space while drawing → place vertex
+    if (e.touches.length === 0 && this._touchMode === 'pendingPan' && this._touchPanCandidate) {
+      const cand = this._touchPanCandidate;
+      this._touchPanCandidate = null;
+      this._touchMode = null;
+      this._onPointerDown({ clientX: cand.x, clientY: cand.y, button: 0 });
+      this._onPointerUp({ clientX: cand.x, clientY: cand.y, button: 0 });
+      return;
+    }
+
     this._pinch = null;
+    this._touchPanCandidate = null;
     this._touchMode = null;
     this._onPointerUp(e);
   }
@@ -1559,14 +1632,18 @@ export class SketchEditor {
       { key: 'size', text: 'Изменить размер' },
       { key: 'openings', text: 'Проёмы', disabled: !this._wallHeightConfirmed },
     ];
-    const gap = 6;
-    const padX = 10;
-    const bh = 26;
-    this.ctx.font = '600 11px system-ui';
-    const widths = labels.map((l) => this.ctx.measureText(l.text).width + padX * 2);
+    const coarse = this._isCoarsePointer();
+    const gap = coarse ? 8 : 6;
+    const padX = coarse ? 14 : 10;
+    const bh = coarse ? 44 : 32;
+    this.ctx.font = coarse ? '600 13px system-ui' : '600 11px system-ui';
+    const widths = labels.map((l) => Math.max(
+      coarse ? 120 : 0,
+      this.ctx.measureText(l.text).width + padX * 2
+    ));
     const totalW = widths.reduce((s, w) => s + w, 0) + gap * (labels.length - 1);
     let bx = mx - totalW / 2;
-    const by = my + 8;
+    const by = my + 10;
     this._edgeActionRects = {};
 
     labels.forEach((l, idx) => {
@@ -1577,8 +1654,15 @@ export class SketchEditor {
       this.ctx.lineWidth = 1;
       this.ctx.shadowColor = 'rgba(0,0,0,0.12)';
       this.ctx.shadowBlur = 6;
-      this.ctx.fillRect(bx, by, bw, bh);
-      this.ctx.strokeRect(bx + 0.5, by + 0.5, bw - 1, bh - 1);
+      const r = 8;
+      this.ctx.beginPath();
+      if (typeof this.ctx.roundRect === 'function') {
+        this.ctx.roundRect(bx, by, bw, bh, r);
+      } else {
+        this.ctx.rect(bx, by, bw, bh);
+      }
+      this.ctx.fill();
+      this.ctx.stroke();
       this.ctx.shadowBlur = 0;
       this.ctx.fillStyle = disabled ? '#999' : ACCENT;
       this.ctx.textAlign = 'center';
@@ -1612,7 +1696,10 @@ export class SketchEditor {
     if (this.openingsBtn) this.openingsBtn.disabled = !this.closed;
 
     let bottomText = '—';
-    let hintText = 'Кликайте по сетке — шаг 1 м';
+    const touchUi = this._isCoarsePointer() || window.matchMedia?.('(max-width: 899px)')?.matches;
+    let hintText = touchUi
+      ? 'Тап — точка, сдвиг — панорама · шаг 1 м'
+      : 'Кликайте по сетке — шаг 1 м';
 
     if (this.closed && this.vertices.length >= 3) {
       const area = shoelaceArea(this.vertices);
@@ -1627,11 +1714,17 @@ export class SketchEditor {
         bottomText += ' · укладка панелей';
       } else if (unset > 0) {
         bottomText += ` · ${unset} сторон без размера`;
-        hintText = 'Задайте размеры — кликните по стороне, затем «Изменить размер»';
+        hintText = touchUi
+          ? 'Тап по стороне → «Изменить размер»'
+          : 'Задайте размеры — кликните по стороне, затем «Изменить размер»';
       } else if (this.geometryLocked) {
-        hintText = 'Размеры задаются слева · клик по стороне — проёмы · вкладка «Стены»';
+        hintText = touchUi
+          ? 'Тап по стороне — проёмы · размеры слева'
+          : 'Размеры задаются слева · клик по стороне — проёмы · вкладка «Стены»';
       } else {
-        hintText = 'Контур готов · тяните углы или «Настроить стены»';
+        hintText = touchUi
+          ? 'Тяните углы · pinch — масштаб'
+          : 'Контур готов · тяните углы или «Настроить стены»';
       }
     } else if (!this.closed && this.vertices.length >= 3) {
       hintText = 'Замкните контур на красной точке';

@@ -896,30 +896,36 @@ function setupSketchEditor() {
       onExplicitChange();
     },
     onRoomChange: ({ wallHeight } = {}) => {
-      if (state.inputMode === 'dims') {
-        if (wallHeight > 0) {
-          state.room.wallHeight = wallHeight;
-          els.form.wallHeight.value = wallHeight;
-          if (els.form.quickHeight) els.form.quickHeight.value = wallHeight;
-        }
-        return;
-      }
       if (wallHeight > 0) {
         state.room.wallHeight = wallHeight;
         els.form.wallHeight.value = wallHeight;
         if (els.form.quickHeight) els.form.quickHeight.value = wallHeight;
         if ($('drawHeight')) $('drawHeight').value = wallHeight;
       }
-      updatePlanStats();
-      refreshWallSurfaceCheckboxes();
-      syncChromeUi();
+      // В dims контур только из L×W×H, но проёмы живут в том же room —
+      // без пересчёта схема стены остаётся без дверей/окон до ручного тогла.
+      if (state.inputMode !== 'dims') {
+        updatePlanStats();
+        refreshWallSurfaceCheckboxes();
+        syncChromeUi();
+      }
       onExplicitChange();
     },
     onGeometryEdit: () => {
       markPanelPreviewStale();
     },
-    onGeometrySettle: () => {
-      runCalculation({ silent: true });
+    onGeometrySettle: ({ reason } = {}) => {
+      const ok = runCalculation({ silent: true });
+      // После «Готово» в проёмах сразу показать обновлённую развёртку стены
+      if (ok && reason === 'openings-done') {
+        setSchemeView('walls');
+        const wallId = sketchEditor?.selectedWallId;
+        if (wallId && $('wallViewSelect')) {
+          $('wallViewSelect').value = wallId;
+          syncWallChipsActive();
+          renderSelectedWall();
+        }
+      }
     },
   });
   sketchEditor.activate({ room: state.room, startTutorial: false });
