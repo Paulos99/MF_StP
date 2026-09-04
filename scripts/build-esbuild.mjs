@@ -24,16 +24,12 @@ writeFileSync('dist/index.html', html);
 
 copyFileSync('styles.css', 'dist/assets/app.css');
 
-try {
-  copyFileSync('logo.png', 'dist/logo.png');
-} catch {
-  /* optional asset */
-}
-
-try {
-  copyFileSync('buy.png', 'dist/buy.png');
-} catch {
-  /* optional asset */
+for (const file of ['logo.png', 'logo-multiframe.png', 'buy.png', 'add-image.png']) {
+  try {
+    copyFileSync(file, `dist/${file}`);
+  } catch {
+    /* optional asset */
+  }
 }
 
 console.log('Build complete → dist/');
