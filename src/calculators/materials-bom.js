@@ -133,55 +133,45 @@ export function buildWallSurfaceStats(wr, mountingType, wallHeight) {
 
 export function formatResultsText(bom, room) {
   const lines = [];
-  lines.push(`Размер панели (габарит): ${PANEL.nominal.length.toFixed(2).replace('.', ',')}×${PANEL.nominal.width.toFixed(2).replace('.', ',')} м`);
-  lines.push(`РРЦ панели: ${PANEL.priceRub.toLocaleString('ru-RU')} ₽`);
-  lines.push('');
+  // Без дубля размера/цены панели и итоговых карточек — только детали
 
   if (bom.ceiling) {
     const s = bom.ceiling.stats;
-    lines.push('── ПОТОЛОК ──');
-    lines.push(`Монтаж: ${bom.ceiling.mountingLabel}`);
-    lines.push(`Схема: ${bom.ceiling.schemeName}`);
-    lines.push(`Площадь: ${bom.ceiling.area.toFixed(2)} м²`);
-    lines.push(`Панелей: ${s.total} (${s.fullPanels ?? s.total ?? 0} целых + ${s.cutPanels ?? 0} подрез.)`);
-    lines.push(`К закупке: ${s.panelsToPurchase} шт.`);
-    lines.push(`Дюбели: ${s.dowels.withReserve} шт.`);
+    lines.push('Потолок');
+    lines.push(`Схема: ${bom.ceiling.schemeName} · ${bom.ceiling.mountingLabel}`);
+    lines.push(`${s.fullPanels ?? 0} целых + ${s.cutPanels ?? 0} подрез. · дюбели ${s.dowels.withReserve}`);
     if (bom.ceiling.frame) {
-      lines.push('Каркас:');
+      lines.push('Каркас потолка:');
       lines.push(...formatFrameMaterials(bom.ceiling.frame, '  '));
     }
-    lines.push(`Стоимость панелей: ${s.totalCost.toLocaleString('ru-RU')} ₽`);
     lines.push('');
   }
 
   if (bom.walls) {
     const s = bom.walls.stats;
-    lines.push('── СТЕНЫ ──');
-    lines.push(`Монтаж: ${bom.walls.mountingLabel}`);
-    lines.push(`Чистая площадь стен: ${bom.walls.area.toFixed(2)} м²`);
-    lines.push(`Панелей: ${s.total} (${s.fullPanels ?? s.total ?? 0} целых + ${s.cutPanels ?? 0} подрез.)`);
-    lines.push(`К закупке: ${s.panelsToPurchase} шт.`);
-    lines.push(`Дюбели: ${s.dowels.withReserve} шт.`);
+    lines.push('Стены');
+    lines.push(`${bom.walls.mountingLabel} · ${bom.walls.area.toFixed(2)} м²`);
+    lines.push(`${s.fullPanels ?? 0} целых + ${s.cutPanels ?? 0} подрез. · дюбели ${s.dowels.withReserve}`);
+    if (bom.walls.wallResults?.length) {
+      bom.walls.wallResults.forEach((wr) => {
+        const n = wr.panels?.length ?? 0;
+        lines.push(`  ${wr.wall.label}: ${n} пан.`);
+      });
+    }
     if (bom.walls.frame) {
-      lines.push('Каркас (суммарно по стенам):');
+      lines.push('Каркас стен:');
       lines.push(...formatFrameMaterials(bom.walls.frame, '  '));
     }
-    lines.push(`Стоимость панелей: ${s.totalCost.toLocaleString('ru-RU')} ₽`);
     lines.push('');
   }
 
-  if (bom.total) {
-    lines.push('── ИТОГО ──');
-    lines.push(`Панелей к закупке: ${bom.total.panelsWithReserve} шт.`);
-    lines.push(`Дюбели: ${bom.total.dowelsWithReserve} шт.`);
-    if (bom.total.frame?.items?.length) {
-      lines.push('Каркас (всего по проекту):');
-      lines.push(...formatFrameMaterials(bom.total.frame, '  '));
-    } else if (bom.total.profileLengthM > 0) {
-      lines.push(`Профиль суммарно: ${bom.total.profileLengthM.toFixed(2)} м`);
-    }
-    lines.push(`Общая стоимость панелей: ${bom.total.totalCost.toLocaleString('ru-RU')} ₽`);
+  if (bom.total?.dowelsWithReserve) {
+    lines.push(`Дюбели всего: ${bom.total.dowelsWithReserve} шт.`);
+  }
+  if (bom.total?.frame?.items?.length) {
+    lines.push('Каркас итого:');
+    lines.push(...formatFrameMaterials(bom.total.frame, '  '));
   }
 
-  return lines.join('\n');
+  return lines.filter((l, i, arr) => !(l === '' && arr[i - 1] === '')).join('\n').trim();
 }

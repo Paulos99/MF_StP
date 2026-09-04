@@ -262,6 +262,66 @@ function updateLayoutMode() {
 
   syncCalcButtons();
   updateStatCards();
+  syncChromeUi();
+}
+
+/** Спрятать шум: дубли, детали, кнопки — пока нет актуального расчёта */
+function syncChromeUi() {
+  const ready = !!state.hasResults;
+  const mode = state.inputMode;
+  const drawReady = mode !== 'draw' || (state.room.vertices?.length >= 3);
+
+  document.querySelector('.workspace-section--panel-info')?.toggleAttribute('hidden', true);
+  $('projectLoadedBanner')?.classList.toggle('is-compact', true);
+
+  const resultsCard = document.querySelector('.results-card');
+  const secondary = document.querySelector('.secondary-toolbar');
+  const stats = document.querySelector('.workspace-stats');
+
+  if (resultsCard) resultsCard.hidden = !ready;
+  if (secondary) secondary.hidden = !ready;
+  if (stats) stats.classList.toggle('is-idle', !ready);
+
+  $('shareBtnSecondary')?.toggleAttribute('hidden', !ready);
+  $('downloadBtn')?.toggleAttribute('hidden', !ready);
+  $('calcReadyBanner')?.toggleAttribute('hidden', !ready);
+
+  // В draw до замкнутого контура — только высота/фото, без «что считать»
+  const shared = $('sharedCalcOptions');
+  if (shared) {
+    shared.hidden = !mode || (mode === 'draw' && !drawReady);
+  }
+
+  // Оверлеи схемы — только когда есть раскладка
+  $('planOverlayToggles')?.classList.toggle(
+    'is-hidden',
+    !ready || !isSketchMode() || state.activeView !== 'plan'
+  );
+
+  // Тема оставляем всегда, но подпись короче на empty
+  document.querySelector('.theme-toggle__label')?.toggleAttribute('hidden', !mode);
+}
+
+function clearResultsUi(message = '') {
+  state.hasResults = false;
+  state.bom = null;
+  state.ceilingResult = null;
+  state.wallResult = null;
+  state.ceilingCalc = null;
+  state.resultsStale = false;
+  lastPanelsSnapshot = null;
+  const textEl = $('resultsText');
+  if (textEl) {
+    textEl.textContent = message || (state.inputMode
+      ? 'Цифры появятся после расчёта'
+      : 'Выберите способ слева');
+  }
+  $('calcReadyBanner')?.setAttribute('hidden', '');
+  sketchEditor?.clearPanelPreview?.();
+  updateResultsTabsVisibility();
+  updateStatCards();
+  updateResultsPreview();
+  syncChromeUi();
 }
 
 function renderPlanEditors() {
@@ -460,7 +520,7 @@ function refreshWallSurfaceCheckboxes() {
       (w) => `
       <label class="surface-chip surface-chip--toggle">
         <input type="checkbox" name="wallSurface" value="${w.id}" ${prev.has(w.id) ? 'checked' : ''} />
-        <span class="surface-chip__label">${w.label} <span class="surface-meta">${w.length.toFixed(1)}×${state.room.wallHeight.toFixed(1)}</span></span>
+        <span class="surface-chip__label">${w.label.replace(/^Стена\s+/i, '')}</span>
       </label>`
     )
     .join('');
@@ -500,21 +560,28 @@ function syncModePanelsUi() {
   const entry = $('entryPicker');
   const bar = $('activeModeBar');
   const label = $('activeModeLabel');
-  const shared = $('sharedCalcOptions');
 
   if (entry) entry.hidden = !!mode;
   if (bar) bar.hidden = !mode;
   if (label) label.textContent = MODE_LABELS[mode] || '—';
-  if (shared) shared.hidden = !mode;
 
   const dimsCard = $('dimsCalcCard');
   const drawCard = $('drawCalcCard');
   const areaCard = $('quickCalcCard');
-  if (dimsCard) dimsCard.hidden = mode !== 'dims';
+  if (dimsCard) {
+    dimsCard.hidden = mode !== 'dims';
+    // Площадь/периметр уже на схеме — не дублируем в сайдбаре
+    const stats = $('planStatsDims');
+    if (stats) stats.hidden = true;
+  }
   if (drawCard) drawCard.hidden = mode !== 'draw';
   if (areaCard) areaCard.hidden = mode !== 'area';
 
   sketchEditor?.setGeometryLocked?.(mode === 'dims');
+  // В dims размеры уже слева и на рёбрах — нижняя строка площади дублирует
+  const bottomStats = document.getElementById('sketchBottomStats');
+  if (bottomStats) bottomStats.hidden = mode === 'dims';
+  syncChromeUi();
 }
 
 /** Открыть режим (взаимоисключение dims | draw | area) */
@@ -531,15 +598,17 @@ function setInputMode(mode, { confirmSwitch = false, preserveGeometry = false } 
   state.inputMode = next || null;
 
   if (!next) {
-    state.hasResults = false;
-    state.bom = null;
-    lastPanelsSnapshot = null;
-    $('calcReadyBanner')?.setAttribute('hidden', '');
+    clearResultsUi('Выберите способ слева');
     syncModePanelsUi();
     updateSchemeModeUi();
     updateLayoutMode();
-    updateResultsPreview();
     return;
+  }
+
+  if (!preserveGeometry) {
+    clearResultsUi(next === 'draw'
+      ? 'Нарисуйте и замкните контур — затем появятся цифры'
+      : 'Цифры появятся после расчёта');
   }
 
   if (next === 'dims') {
@@ -669,23 +738,17 @@ function updateResultsPreview() {
   preview.style.maxHeight = '';
 
   if (!state.hasResults) {
-    card.classList.add('is-expanded');
+    card.classList.remove('is-expanded');
     btn.hidden = true;
     if (collapseBtn) collapseBtn.hidden = true;
     return;
   }
 
-  // После первого расчёта результаты раскрыты по умолчанию
-  if (!card.classList.contains('is-expanded')) {
-    card.classList.add('is-expanded');
-  }
+  // Главное — три карточки; детали свёрнуты (не дублировать итог)
+  card.classList.remove('is-expanded');
   btn.hidden = false;
-  btn.textContent = 'Скрыть результаты';
-  if (collapseBtn) collapseBtn.hidden = false;
-
-  requestAnimationFrame(() => {
-    preview.style.maxHeight = `${Math.max(textEl.scrollHeight + 8, 80)}px`;
-  });
+  btn.textContent = 'Подробнее: крепёж и каркас';
+  if (collapseBtn) collapseBtn.hidden = true;
 }
 
 function setupResultsExpand() {
@@ -698,7 +761,7 @@ function setupResultsExpand() {
 
   const setExpanded = (expanding) => {
     card.classList.toggle('is-expanded', expanding);
-    btn.textContent = expanding ? 'Скрыть результаты' : 'Результаты расчёта';
+    btn.textContent = expanding ? 'Скрыть подробности' : 'Подробнее: крепёж и каркас';
     if (collapseBtn) collapseBtn.hidden = !expanding;
     if (expanding) {
       preview.style.maxHeight = `${Math.max(textEl.scrollHeight + 8, 80)}px`;
@@ -807,6 +870,7 @@ function setupSketchEditor() {
       }
       updatePlanStats();
       refreshWallSurfaceCheckboxes();
+      syncChromeUi();
       onExplicitChange();
     },
     onGeometryEdit: () => {
@@ -992,22 +1056,34 @@ function applyResultsToUi() {
 }
 
 function showCalcReadyBanner() {
-  const banner = $('calcReadyBanner');
-  if (!banner || !state.hasResults || !state.bom?.total) return;
-  const panels = state.bom.total.panelsWithReserve ?? 0;
-  const deltaEl = $('calcReadyDelta');
-  const titleEl = $('calcReadyTitle');
-  let deltaText = '';
-  if (lastPanelsSnapshot != null && lastPanelsSnapshot !== panels) {
-    deltaText = `Панелей: ${lastPanelsSnapshot} → ${panels}`;
-    if (titleEl) titleEl.textContent = 'Расчёт обновлён';
-  } else if (titleEl) {
-    titleEl.textContent = 'Расчёт готов';
+  const statusEl = $('schemeStatus');
+  if (!state.hasResults || !state.bom?.total) {
+    $('calcReadyBanner')?.setAttribute('hidden', '');
+    return;
   }
-  if (deltaEl) deltaEl.textContent = deltaText;
+  const panels = state.bom.total.panelsWithReserve ?? 0;
+  let msg = 'Расчёт готов';
+  if (lastPanelsSnapshot != null && lastPanelsSnapshot !== panels) {
+    msg = `Обновлено: ${lastPanelsSnapshot} → ${panels} пан.`;
+  }
   lastPanelsSnapshot = panels;
-  banner.hidden = false;
+
+  if (statusEl) {
+    statusEl.hidden = false;
+    statusEl.textContent = msg;
+    statusEl.classList.add('is-computing');
+    clearTimeout(showCalcReadyBanner._t);
+    showCalcReadyBanner._t = setTimeout(() => {
+      statusEl.classList.remove('is-computing');
+      statusEl.hidden = true;
+      statusEl.textContent = '';
+    }, 2600);
+  }
+
+  // Компактный CTA проёмов только в сайдбаре — без второго баннера «готов»
+  $('calcReadyBanner')?.setAttribute('hidden', '');
   updateSurfaceGroupsUi();
+  syncChromeUi();
 }
 
 function runQuickAreaCalc(area) {
@@ -1048,6 +1124,7 @@ function runCalculation(options = {}) {
   const errors = validateBeforeCalc();
   if (errors.length) {
     if (!silent) showValidationErrors(errors);
+    else clearResultsUi(errors[0] || '');
     return false;
   }
   if (!silent) showValidationErrors([]);
@@ -1232,7 +1309,7 @@ function syncWallChipsActive() {
 }
 
 function updateResultsTabsVisibility() {
-  const hasWalls = !!state.wallResult?.wallResults?.length;
+  const hasWalls = !!state.wallResult?.wallResults?.length && state.hasResults;
 
   document.querySelectorAll('#resultsTabs .tab-btn').forEach((btn) => {
     const tab = btn.dataset.tab;
@@ -1241,7 +1318,6 @@ function updateResultsTabsVisibility() {
       return;
     }
     if (tab === 'walls') {
-      // Keep in layout (CSS reserves slot) to avoid header jump
       btn.hidden = !hasWalls;
     }
   });
@@ -1324,7 +1400,13 @@ function buildProjectState() {
 
 function showProjectLoadedBanner() {
   const banner = $('projectLoadedBanner');
-  if (banner) banner.hidden = false;
+  if (!banner) return;
+  banner.hidden = false;
+  banner.textContent = 'Проект из ссылки загружен';
+  clearTimeout(showProjectLoadedBanner._t);
+  showProjectLoadedBanner._t = setTimeout(() => {
+    banner.hidden = true;
+  }, 3500);
 }
 
 async function handleShare() {

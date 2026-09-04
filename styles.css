@@ -5921,3 +5921,32 @@ body.theme-dark .entry-card__title {
   padding: 8px 12px;
   font-size: 0.88rem;
 }
+
+/* Declutter: idle chrome */
+.workspace-stats.is-idle {
+  opacity: 0.45;
+  pointer-events: none;
+}
+.workspace-stats.is-idle .stat-card-button {
+  pointer-events: auto;
+  opacity: 1;
+}
+.secondary-toolbar[hidden],
+.results-card[hidden],
+.workspace-section--panel-info[hidden] {
+  display: none !important;
+}
+.project-loaded-banner {
+  font-size: 0.8rem;
+  padding: 8px 10px;
+  margin: 8px 0;
+}
+#calcReadyBanner[hidden] {
+  display: none !important;
+}
+.entry-picker__lead {
+  margin-bottom: 4px;
+}
+.shared-calc-options {
+  margin-top: 4px;
+}
