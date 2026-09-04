@@ -389,10 +389,26 @@ export class SketchEditor {
   }
 
   _showWallHeightModal() {
+    // Inline UX: высота задаётся в сайдбаре — попап не дублируем
+    if (this.inline) {
+      this._confirmWallHeightFromSidebar();
+      return;
+    }
     if (!this.wallHeightModal) return;
     if (this.wallHeightPopup) this.wallHeightPopup.value = String(this.wallHeightValue);
     this.wallHeightModal.hidden = false;
     requestAnimationFrame(() => this.wallHeightModal.classList.add('is-open'));
+  }
+
+  _confirmWallHeightFromSidebar() {
+    const fromSidebar = parseFloat(document.getElementById('drawHeight')?.value);
+    const wh = (fromSidebar > 0 ? fromSidebar : Number(this.wallHeightValue)) || 2.7;
+    this.wallHeightValue = wh;
+    this._wallHeightConfirmed = true;
+    if (this.room) this.room.wallHeight = wh;
+    this.onRoomChange?.(this._roomChangePayload());
+    this.render();
+    this._updateUi();
   }
 
   _confirmWallHeight() {

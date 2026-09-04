@@ -674,6 +674,10 @@ function setInputMode(mode, { confirmSwitch = false, preserveGeometry = false } 
       void $('sketchEditorHost')?.offsetWidth;
       sketchEditor?.syncFromRoom?.(state.room, { settle: true, fit: true });
     }
+    if (sketchEditor) {
+      sketchEditor.wallHeightValue = h;
+      sketchEditor._wallHeightConfirmed = h > 0;
+    }
   } else if (next === 'area') {
     sketchEditor?.setGeometryLocked?.(false);
     if (!state.areaWalls.length) {
@@ -720,7 +724,12 @@ function setupModeToggles() {
   });
   $('drawHeight')?.addEventListener('input', () => {
     syncFormToRoom();
-    sketchEditor.wallHeightValue = state.room.wallHeight;
+    if (sketchEditor) {
+      sketchEditor.wallHeightValue = state.room.wallHeight;
+      sketchEditor._wallHeightConfirmed = state.room.wallHeight > 0;
+      sketchEditor.render?.();
+      sketchEditor._updateUi?.();
+    }
     onExplicitChange();
   });
 
