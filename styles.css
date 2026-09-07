@@ -7359,25 +7359,6 @@ body.theme-dark .rb-wall__panels-unit {
         width: 100%;
     }
 
-    .sketch-inline.is-fullscreen.is-mobile-step .sketch-inline-footer {
-        flex-shrink: 0;
-        padding: 8px 12px calc(8px + var(--safe-bottom));
-        gap: 10px;
-        background: #fff;
-        border-top: 1px solid #e8ecea;
-    }
-
-    .sketch-inline.is-fullscreen.is-mobile-step .sketch-mobile-done-footer {
-        display: inline-flex;
-        margin-left: auto;
-        min-height: 44px;
-        padding: 0 18px;
-    }
-
-    .sketch-inline.is-fullscreen.is-mobile-step .sketch-mobile-done-footer[hidden] {
-        display: inline-flex !important;
-    }
-
     .sketch-inline.is-fullscreen.is-mobile-step #sketchFitBtn {
         display: none;
     }
@@ -7389,13 +7370,121 @@ body.theme-dark .rb-wall__panels-unit {
         left: auto;
     }
 
-    /* Compact summary card after «Готово»: «Изменить схему» */
-    .sketch-inline.is-mobile-summary .sketch-mobile-edit-footer:not([hidden]) {
-        display: inline-flex;
-        margin-left: auto;
-        min-height: 40px;
-        padding: 0 12px;
+    /* Fullscreen step footer: readable stats + Готово, no overlap */
+    .sketch-inline.is-fullscreen.is-mobile-step .sketch-inline-footer {
+        display: flex;
+        flex-direction: column;
+        align-items: stretch;
+        justify-content: flex-start;
+        flex-wrap: nowrap;
+        flex-shrink: 0;
+        gap: 8px;
+        padding: 10px 12px calc(10px + var(--safe-bottom));
+        background: #fff;
+        border-top: 1px solid #e8ecea;
+    }
+
+    .sketch-inline.is-fullscreen.is-mobile-step .sketch-bottom-stats {
+        flex: 0 0 auto;
+        width: 100%;
+        min-width: 0;
+        max-width: 100%;
+        white-space: normal;
+        overflow-wrap: break-word;
+        word-break: normal;
+        line-height: 1.35;
         font-size: 13px;
+        text-align: left;
+    }
+
+    .sketch-inline.is-fullscreen.is-mobile-step .sketch-mobile-done-footer {
+        display: flex;
+        width: 100%;
+        margin-left: 0;
+        min-height: 44px;
+        padding: 0 18px;
+        justify-content: center;
+        align-items: center;
+        flex-shrink: 0;
+    }
+
+    .sketch-inline.is-fullscreen.is-mobile-step .sketch-mobile-done-footer[hidden] {
+        display: flex !important;
+    }
+
+    .sketch-inline.is-fullscreen.is-mobile-step .sketch-mobile-edit-footer {
+        display: none !important;
+    }
+
+    /* Mobile summary stub: no mini-editor chrome outside fullscreen step */
+    .sketch-mobile-summary-stub {
+        display: none;
+    }
+
+    .sketch-inline.is-mobile-summary:not(.is-fullscreen) .sketch-mobile-summary-stub {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 6px;
+        flex: 1 1 auto;
+        min-height: 120px;
+        padding: 20px 16px;
+        text-align: center;
+        background: #f0f4f2;
+    }
+
+    .sketch-inline.is-mobile-summary:not(.is-fullscreen) .sketch-mobile-summary-stub__title {
+        margin: 0;
+        font-size: 16px;
+        font-weight: 650;
+        color: var(--text-primary, #1a1f1c);
+    }
+
+    .sketch-inline.is-mobile-summary:not(.is-fullscreen) .sketch-mobile-summary-stub__stats {
+        margin: 0;
+        font-size: 13px;
+        line-height: 1.4;
+        color: var(--text-secondary, #5c6b63);
+        white-space: normal;
+        overflow-wrap: break-word;
+        word-break: normal;
+        max-width: 100%;
+    }
+
+    .sketch-inline.is-mobile-summary:not(.is-fullscreen) .sketch-hint-bar--inline,
+    .sketch-inline.is-mobile-summary:not(.is-fullscreen) .sketch-stage,
+    .sketch-inline.is-mobile-summary:not(.is-fullscreen) .sketch-float-toolbar,
+    .sketch-inline.is-mobile-summary:not(.is-fullscreen) .sketch-float-zoom,
+    .sketch-inline.is-mobile-summary:not(.is-fullscreen) .sketch-mobile-step-bar,
+    .sketch-inline.is-mobile-summary:not(.is-fullscreen) #sketchFitBtn {
+        display: none !important;
+    }
+
+    .sketch-inline.is-mobile-summary:not(.is-fullscreen) .sketch-inline-footer {
+        display: flex;
+        flex-direction: column;
+        align-items: stretch;
+        gap: 0;
+        padding: 0 12px 12px;
+        border-top: none;
+        background: #f0f4f2;
+    }
+
+    .sketch-inline.is-mobile-summary:not(.is-fullscreen) .sketch-bottom-stats,
+    .sketch-inline.is-mobile-summary:not(.is-fullscreen) .sketch-mobile-done-footer {
+        display: none !important;
+    }
+
+    .sketch-inline.is-mobile-summary:not(.is-fullscreen) .sketch-mobile-edit-footer:not([hidden]) {
+        display: flex;
+        width: 100%;
+        margin-left: 0;
+        min-height: 44px;
+        padding: 0 16px;
+        font-size: 15px;
+        justify-content: center;
+        align-items: center;
     }
 
     body.sketch-mobile-step-open .mobile-toolbar,

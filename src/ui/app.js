@@ -108,12 +108,17 @@ function closeMobileSidebar() {
   document.body.classList.remove('mobile-sidebar-open');
 }
 
-function enterMobileSketchStep() {
+function enterMobileSketchStep({ force = false } = {}) {
   if (!isMobileLayout() || state.inputMode !== 'draw') return;
-  if (onboardingDemoActive) return;
+  // Allow forced entry during guided tour; otherwise skip while demo owns UI.
+  if (onboardingDemoActive && !force) return;
   closeMobileSidebar();
   const host = $('sketchEditorHost');
   host?.classList.remove('is-mobile-summary');
+  const stub = $('sketchMobileSummaryStub');
+  if (stub) stub.hidden = true;
+  const editBtn = $('sketchMobileEditBtn');
+  if (editBtn) editBtn.hidden = true;
   sketchEditor?.setMobileSketchStep?.(true);
   requestAnimationFrame(() => {
     sketchEditor?.fitToScreen?.();
@@ -121,22 +126,65 @@ function enterMobileSketchStep() {
   });
 }
 
-function exitMobileSketchStep({ markSummary = true } = {}) {
+function syncMobileSketchSummary() {
+  const stub = $('sketchMobileSummaryStub');
+  const titleEl = $('sketchMobileSummaryTitle');
+  const statsEl = $('sketchMobileSummaryStats');
+  const bottom = $('sketchBottomStats');
+  const closed = !!(sketchEditor?.closed && (sketchEditor?.vertices?.length || 0) >= 3);
+  const statsText = (bottom?.textContent || '').trim();
+  const hasStats = !!statsText && statsText !== '—';
+  if (titleEl) {
+    titleEl.textContent = closed || hasStats ? 'Схема готова' : 'Схема монтажа';
+  }
+  if (statsEl) {
+    statsEl.textContent = hasStats ? statsText : (closed ? 'Контур замкнут — можно уточнить параметры' : 'Нажмите «Изменить схему», чтобы нарисовать');
+  }
+  if (stub) stub.hidden = false;
+}
+
+function openMobileParamsAfterSketch() {
+  if (!isMobileLayout()) return;
+  document.body.classList.add('mobile-sidebar-open');
+  requestAnimationFrame(() => {
+    const shared = $('sharedReveal');
+    if (shared) {
+      shared.classList.add('is-open');
+      shared.querySelector('.shared-reveal__collapse')?.removeAttribute('inert');
+      $('sharedCalcOptions')?.setAttribute('aria-hidden', 'false');
+    }
+    const target =
+      $('drawHeight')?.closest('.form-group')
+      || $('drawCalcCard')
+      || $('sharedCalcOptions')
+      || document.querySelector('.sidebar-calc-wrap');
+    try {
+      target?.scrollIntoView?.({ block: 'start', behavior: 'smooth' });
+    } catch { /* ignore */ }
+  });
+}
+
+function exitMobileSketchStep({ markSummary = true, openParams = false } = {}) {
   const host = $('sketchEditorHost');
   if (markSummary && state.inputMode === 'draw' && isMobileLayout()) {
     host?.classList.add('is-mobile-summary');
     const editBtn = $('sketchMobileEditBtn');
     if (editBtn) editBtn.hidden = false;
+    syncMobileSketchSummary();
   } else {
     host?.classList.remove('is-mobile-summary');
     const editBtn = $('sketchMobileEditBtn');
     if (editBtn) editBtn.hidden = true;
+    const stub = $('sketchMobileSummaryStub');
+    if (stub) stub.hidden = true;
   }
   sketchEditor?.setMobileSketchStep?.(false);
   requestAnimationFrame(() => {
     sketchEditor?.fitToScreen?.();
     sketchEditor?.render?.();
+    if (markSummary) syncMobileSketchSummary();
   });
+  if (openParams) openMobileParamsAfterSketch();
 }
 
 /** Scroll results into view inside the mobile app-main scroller. */
@@ -988,7 +1036,7 @@ function setupSketchEditor() {
     inline: true,
     dialogsEl: $('sketchEditorModal'),
     onMobileStepDone: () => {
-      exitMobileSketchStep({ markSummary: true });
+      exitMobileSketchStep({ markSummary: true, openParams: true });
     },
     onApply: ({ vertices, edgeDimensions, diagonalDimensions, wallHeight }) => {
       if (state.inputMode === 'dims') return;
@@ -1790,6 +1838,9 @@ function init() {
     applySketchTemplate: (name) => sketchEditor?._applyTemplate?.(name),
     getSketchEditor: () => sketchEditor,
     setSchemeView: (view) => setSchemeView(view),
+    enterMobileSketchStep: () => enterMobileSketchStep({ force: true }),
+    exitMobileSketchStep: (opts) => exitMobileSketchStep(opts || { markSummary: true }),
+    openMobileParamsAfterSketch: () => openMobileParamsAfterSketch(),
     onDemoStart: () => { onboardingDemoActive = true; },
     onDemoEnd: () => { onboardingDemoActive = false; },
     resetAfterDemo: () => resetUiAfterOnboarding(),
@@ -1802,6 +1853,7 @@ function resetUiAfterOnboarding() {
   onboardingDemoActive = true;
   try {
     closeMobileSidebar();
+    exitMobileSketchStep({ markSummary: false });
     document.querySelectorAll('.tour-demo-pulse').forEach((el) => el.classList.remove('tour-demo-pulse'));
 
     if (sketchEditor) {

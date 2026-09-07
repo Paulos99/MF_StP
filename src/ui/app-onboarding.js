@@ -139,6 +139,7 @@ function pickLongestWall(editor) {
 
 async function demoOpenings(cursor, tour) {
   if (tourIsMobileLayout()) closeMobileSidebar();
+  const openStep = tourIsMobileLayout() ? '5 / 8' : '4 / 8';
 
   const openingsBtn = $('#sketchOpeningsBtn');
   const editor = demoHooks?.getSketchEditor?.();
@@ -151,7 +152,7 @@ async function demoOpenings(cursor, tour) {
     text: 'Сначала вкладка «Стены», затем редактор проёмов — добавим дверь и окно.',
     target: wallsBtn || openingsBtn || '.scheme-card',
     radius: 12,
-    stepLabel: '4 / 8',
+    stepLabel: openStep,
     forceCard: true,
   });
 
@@ -168,7 +169,7 @@ async function demoOpenings(cursor, tour) {
   tour.setCopy({
     title: 'Проёмы в стенах',
     text: 'Открываем редактор и ставим дверь у левого края стены.',
-    stepLabel: '4 / 8',
+    stepLabel: openStep,
   });
   await sleep(420);
 
@@ -212,7 +213,7 @@ async function demoOpenings(cursor, tour) {
   tour.setCopy({
     title: 'Проёмы в стенах',
     text: 'Оба проёма на развёртке. Закрываем редактор — смета обновится.',
-    stepLabel: '4 / 8',
+    stepLabel: openStep,
   });
   await sleep(450);
 
@@ -230,6 +231,27 @@ async function demoOpenings(cursor, tour) {
 async function demoSurfaces(cursor, tour) {
   await ensureSidebarForParams();
 
+  const isMobile = tourIsMobileLayout();
+  const heightGroup = $('#drawHeight')?.closest('.form-group');
+  if (isMobile && heightGroup) {
+    try {
+      heightGroup.scrollIntoView({ behavior: 'auto', block: 'center', inline: 'nearest' });
+    } catch { /* ignore */ }
+    await sleep(120);
+    await narrate(tour, {
+      title: 'Параметры после схемы',
+      text: 'Задайте высоту стен, что считать и тип монтажа — геометрия уже сохранена.',
+      target: heightGroup,
+      scrollBlock: 'center',
+      stepLabel: '4 / 8',
+      pad: 10,
+      radius: 12,
+      forceCard: true,
+      skipScroll: true,
+    });
+    await sleep(BEAT * 0.5);
+  }
+
   const block = $('#sharedCalcOptions');
   if (block) {
     try {
@@ -244,7 +266,7 @@ async function demoSurfaces(cursor, tour) {
     text: 'Снимаем лишние стены — оставляем потолок и две стены.',
     target: block || '#sharedCalcOptions',
     scrollBlock: 'center',
-    stepLabel: '5 / 8',
+    stepLabel: isMobile ? '4 / 8' : '5 / 8',
     pad: 12,
     radius: 14,
     forceCard: true,
@@ -290,7 +312,7 @@ async function demoSurfaces(cursor, tour) {
   tour.setCopy({
     title: 'Что считать',
     text: 'В расчёте только выбранные поверхности.',
-    stepLabel: '5 / 8',
+    stepLabel: tourIsMobileLayout() ? '4 / 8' : '5 / 8',
   });
   // Do not move card — only keep spotlight locked on the options block
   tour.refreshSpotlight(block || '#sharedCalcOptions', { pad: 12, radius: 14, sticky: true });
@@ -303,81 +325,118 @@ function stepLabel(i, total) {
 
 function buildSteps() {
   const total = 8;
-  return [
-    {
-      id: 'welcome',
-      async play(cursor, tour) {
-        const title = $('.app-header__text') || $('.app-header');
-        await narrate(tour, {
-          title: 'Калькулятор MultiFRAME',
-          text: 'Считает панели и комплектующие для звукоизоляции потолка и стен — со схемой раскладки и сметой.',
-          target: title,
-          radius: 16,
-          stepLabel: stepLabel(1, total),
-          forceCard: true,
-        });
-        if (title) {
-          const r = title.getBoundingClientRect();
-          const y = r.top + r.height * 0.55;
-          await cursor.moveTo({ x: r.left + 12, y }, { duration: Math.round(CURSOR_MS * 0.7) });
-          await sleep(120);
-          await cursor.moveTo({ x: r.right - 12, y }, { duration: CURSOR_MS });
-        }
-        await sleep(BEAT * 0.45);
-      },
-    },
-    {
-      id: 'mode',
-      async play(cursor, tour) {
-        const mobile = tourIsMobileLayout();
-        if (mobile && !document.body.classList.contains('mobile-sidebar-open')) {
-          await narrate(tour, {
-            title: 'Способ ввода',
-            text: 'Откроем параметры и выберем «Нарисовать схему».',
-            target: '#mobileParamsBtn',
-            aboveFooter: true,
-            radius: 14,
-            stepLabel: stepLabel(2, total),
-            forceCard: true,
-          });
-          await cursor.click($('#mobileParamsBtn'), { duration: CURSOR_MS });
-          await sleep(280);
-        }
+  const mobile = tourIsMobileLayout();
 
+  const welcome = {
+    id: 'welcome',
+    async play(cursor, tour) {
+      const title = $('.app-header__text') || $('.app-header');
+      await narrate(tour, {
+        title: 'Калькулятор MultiFRAME',
+        text: 'Считает панели и комплектующие для звукоизоляции потолка и стен — со схемой раскладки и сметой.',
+        target: title,
+        radius: 16,
+        stepLabel: stepLabel(1, total),
+        forceCard: true,
+      });
+      if (title) {
+        const r = title.getBoundingClientRect();
+        const y = r.top + r.height * 0.55;
+        await cursor.moveTo({ x: r.left + 12, y }, { duration: Math.round(CURSOR_MS * 0.7) });
+        await sleep(120);
+        await cursor.moveTo({ x: r.right - 12, y }, { duration: CURSOR_MS });
+      }
+      await sleep(BEAT * 0.45);
+    },
+  };
+
+  const mode = {
+    id: 'mode',
+    async play(cursor, tour) {
+      const isMobile = tourIsMobileLayout();
+      if (isMobile && !document.body.classList.contains('mobile-sidebar-open')) {
         await narrate(tour, {
           title: 'Способ ввода',
-          text: 'Для сложной формы комнаты удобнее рисовать схему.',
-          textMobile: 'Выбираем «Нарисовать схему».',
-          target: '#entryDrawBtn',
+          text: 'Откроем параметры и выберем «Нарисовать схему».',
+          target: '#mobileParamsBtn',
+          aboveFooter: true,
+          radius: 14,
           stepLabel: stepLabel(2, total),
           forceCard: true,
         });
+        const paramsBtn = $('#mobileParamsBtn');
+        if (paramsBtn) await cursor.click(paramsBtn, { duration: CURSOR_MS });
+        else openMobileSidebar();
+        await sleep(320);
+      }
 
-        if (demoHooks?.getInputMode?.() !== 'draw') {
-          const btn = $('#entryDrawBtn');
-          if (btn) await cursor.click(btn, { duration: CURSOR_MS });
-          else demoHooks?.setInputMode?.('draw', { confirmSwitch: false });
-          await sleep(320);
-        }
+      await narrate(tour, {
+        title: 'Способ ввода',
+        text: 'Для сложной формы комнаты удобнее рисовать схему.',
+        textMobile: 'Выбираем «Нарисовать схему» — откроется полноэкранный редактор.',
+        target: '#entryDrawBtn',
+        stepLabel: stepLabel(2, total),
+        forceCard: true,
+      });
 
-        if (mobile) {
-          closeMobileSidebar();
-          await sleep(220);
-        }
-      },
+      if (demoHooks?.getInputMode?.() !== 'draw') {
+        const btn = $('#entryDrawBtn');
+        if (btn) await cursor.click(btn, { duration: CURSOR_MS });
+        else demoHooks?.setInputMode?.('draw', { confirmSwitch: false });
+        await sleep(320);
+      }
+
+      if (isMobile) {
+        closeMobileSidebar();
+        await sleep(180);
+      }
     },
-    {
-      id: 'draw-layout',
-      async play(cursor, tour) {
-        await narrate(tour, {
+  };
+
+  const drawLayout = {
+    id: 'draw-layout',
+    async play(cursor, tour) {
+      const isMobile = tourIsMobileLayout();
+      const editor = demoHooks?.getSketchEditor?.();
+
+      if (isMobile) {
+        demoHooks?.enterMobileSketchStep?.();
+        await sleep(360);
+      }
+
+      await narrate(tour, {
+        title: 'Контур и раскладка',
+        text: isMobile
+          ? 'В полноэкранном редакторе курсор рисует комнату по сетке 1 м.'
+          : 'Курсор рисует комнату по сетке 1 м. После замыкания сразу появляется раскладка панелей.',
+        target: '#sketchCanvas',
+        stepLabel: stepLabel(3, total),
+        forceCard: true,
+      });
+      await drawRoomWithCursor(cursor, editor);
+
+      if (isMobile) {
+        tour.setCopy({
           title: 'Контур и раскладка',
-          text: 'Курсор рисует комнату по сетке 1 м. После замыкания сразу появляется раскладка панелей.',
-          target: '#sketchCanvas',
+          text: 'Схема готова — нажимаем «Готово» и возвращаемся к параметрам.',
           stepLabel: stepLabel(3, total),
-          forceCard: true,
         });
-        const editor = demoHooks?.getSketchEditor?.();
-        await drawRoomWithCursor(cursor, editor);
+        const doneBtn = $('#sketchMobileDoneBtn') || $('#sketchDoneBtn');
+        if (doneBtn) {
+          tour.refreshSpotlight(doneBtn, { radius: 14 });
+          await cursor.click(doneBtn, { duration: CURSOR_MS });
+        } else {
+          demoHooks?.exitMobileSketchStep?.({ markSummary: true, openParams: true });
+        }
+        await sleep(360);
+        if (!document.body.classList.contains('mobile-sidebar-open')) {
+          if (demoHooks?.openMobileParamsAfterSketch) demoHooks.openMobileParamsAfterSketch();
+          else openMobileSidebar();
+          await sleep(280);
+        }
+        tour.refreshSpotlight('#drawCalcCard', { radius: 12, pad: 8 });
+        await sleep(BEAT * 0.6);
+      } else {
         tour.setCopy({
           title: 'Контур и раскладка',
           text: 'Схема готова — панели MultiFRAME уже на плане.',
@@ -386,82 +445,93 @@ function buildSteps() {
         tour.refreshSpotlight('.scheme-card', { radius: 12 });
         await cursor.moveTo($('.scheme-card') || { x: window.innerWidth * 0.5, y: window.innerHeight * 0.42 }, { duration: CURSOR_MS });
         await sleep(BEAT);
-      },
+      }
     },
-    {
-      id: 'openings',
-      async play(cursor, tour) {
-        await demoOpenings(cursor, tour);
-      },
+  };
+
+  const openings = {
+    id: 'openings',
+    async play(cursor, tour) {
+      await demoOpenings(cursor, tour);
     },
-    {
-      id: 'surfaces',
-      async play(cursor, tour) {
-        await demoSurfaces(cursor, tour);
-      },
+  };
+
+  const surfaces = {
+    id: 'surfaces',
+    async play(cursor, tour) {
+      await demoSurfaces(cursor, tour);
     },
-    {
-      id: 'results',
-      async play(cursor, tour) {
-        if (tourIsMobileLayout()) {
-          closeMobileSidebar();
-          await sleep(220);
-        }
-        await narrate(tour, {
-          title: 'Смета и PDF',
-          text: 'Детальный список материалов и выгрузка в PDF — для клиента или прораба.',
-          target: '#resultsAside',
-          stepLabel: stepLabel(6, total),
-          forceCard: true,
-        });
-        const aside = $('#resultsAside');
-        if (aside) await cursor.moveTo(aside, { duration: CURSOR_MS });
-        const pdf = $('#downloadBtn');
-        if (pdf) {
-          await cursor.moveTo(pdf, { duration: CURSOR_MS * 0.9 });
-          pdf.classList.add('tour-demo-pulse');
-          await sleep(420);
-          pdf.classList.remove('tour-demo-pulse');
-        }
-      },
-    },
-    {
-      id: 'buy',
-      async play(cursor, tour) {
-        const buy = $('#buyMultiframeBtn') || $('.stat-card-button');
-        await narrate(tour, {
-          title: 'Купить MultiFRAME',
-          text: 'Когда цифры устраивают — можно перейти к покупке панелей.',
-          target: buy || '.workspace-stats',
-          radius: 14,
-          stepLabel: stepLabel(7, total),
-          forceCard: true,
-        });
-        if (buy) {
-          await cursor.moveTo(buy, { duration: CURSOR_MS });
-          buy.classList.add('tour-demo-pulse');
-          await sleep(480);
-          buy.classList.remove('tour-demo-pulse');
-        }
-      },
-    },
-    {
-      id: 'help',
-      async play(cursor, tour) {
-        await narrate(tour, {
-          title: 'Обучение всегда под рукой',
-          text: 'Значок «?» в шапке запускает демо снова. Удачных расчётов!',
-          target: '#appHelpBtn',
-          radius: 22,
-          stepLabel: stepLabel(8, total),
-          forceCard: true,
-        });
-        const help = $('#appHelpBtn');
-        if (help) await cursor.moveTo(help, { duration: CURSOR_MS });
+  };
+
+  const results = {
+    id: 'results',
+    async play(cursor, tour) {
+      if (tourIsMobileLayout()) {
+        closeMobileSidebar();
         await sleep(220);
-      },
+      }
+      await narrate(tour, {
+        title: 'Смета и PDF',
+        text: 'Детальный список материалов и выгрузка в PDF — для клиента или прораба.',
+        target: '#resultsAside',
+        stepLabel: stepLabel(6, total),
+        forceCard: true,
+      });
+      const aside = $('#resultsAside');
+      if (aside) await cursor.moveTo(aside, { duration: CURSOR_MS });
+      const pdf = $('#downloadBtn');
+      if (pdf) {
+        await cursor.moveTo(pdf, { duration: CURSOR_MS * 0.9 });
+        pdf.classList.add('tour-demo-pulse');
+        await sleep(420);
+        pdf.classList.remove('tour-demo-pulse');
+      }
     },
-  ];
+  };
+
+  const buy = {
+    id: 'buy',
+    async play(cursor, tour) {
+      const buyBtn = $('#buyMultiframeBtn') || $('.stat-card-button');
+      await narrate(tour, {
+        title: 'Купить MultiFRAME',
+        text: 'Когда цифры устраивают — можно перейти к покупке панелей.',
+        target: buyBtn || '.workspace-stats',
+        radius: 14,
+        stepLabel: stepLabel(7, total),
+        forceCard: true,
+      });
+      if (buyBtn) {
+        await cursor.moveTo(buyBtn, { duration: CURSOR_MS });
+        buyBtn.classList.add('tour-demo-pulse');
+        await sleep(480);
+        buyBtn.classList.remove('tour-demo-pulse');
+      }
+    },
+  };
+
+  const help = {
+    id: 'help',
+    async play(cursor, tour) {
+      await narrate(tour, {
+        title: 'Обучение всегда под рукой',
+        text: 'Значок «?» в шапке запускает демо снова. Удачных расчётов!',
+        target: '#appHelpBtn',
+        radius: 22,
+        stepLabel: stepLabel(8, total),
+        forceCard: true,
+      });
+      const helpBtn = $('#appHelpBtn');
+      if (helpBtn) await cursor.moveTo(helpBtn, { duration: CURSOR_MS });
+      await sleep(220);
+    },
+  };
+
+  // Mobile: after sketch → params (surfaces) first, then openings
+  if (mobile) {
+    return [welcome, mode, drawLayout, surfaces, openings, results, buy, help];
+  }
+  return [welcome, mode, drawLayout, openings, surfaces, results, buy, help];
 }
 
 async function finishDemo(tour, cursor, { completed }) {

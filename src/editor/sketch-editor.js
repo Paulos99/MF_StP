@@ -935,6 +935,11 @@ export class SketchEditor {
       const showEdit = !next && host.classList.contains('is-mobile-summary');
       editBtn.hidden = !showEdit;
     }
+    const stub = this._q('#sketchMobileSummaryStub');
+    if (stub) {
+      const showStub = !next && host.classList.contains('is-mobile-summary');
+      stub.hidden = !showStub;
+    }
 
     const btn = this._q('#sketchFitBtn');
     if (btn) {
@@ -1864,6 +1869,19 @@ export class SketchEditor {
 
     if (this.hintTextEl) this.hintTextEl.textContent = hintText;
     if (this.bottomStatsEl) this.bottomStatsEl.textContent = bottomText;
+    const summaryStats = this._q('#sketchMobileSummaryStats');
+    const summaryTitle = this._q('#sketchMobileSummaryTitle');
+    if (summaryStats) {
+      const hasStats = !!bottomText && bottomText !== '—';
+      summaryStats.textContent = hasStats
+        ? bottomText
+        : (this.closed ? 'Контур замкнут — можно уточнить параметры' : 'Нажмите «Изменить схему», чтобы нарисовать');
+    }
+    if (summaryTitle) {
+      summaryTitle.textContent = (this.closed || (bottomText && bottomText !== '—'))
+        ? 'Схема готова'
+        : 'Схема монтажа';
+    }
     if (this.zoomLabelEl) {
       const pct = Math.round(this.zoom * 100);
       this.zoomLabelEl.textContent = `${pct}%`;
