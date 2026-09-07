@@ -131,10 +131,22 @@ async function drawRoomWithCursor(cursor, editor) {
   await sleep(BEAT);
 }
 
+/** Door 0.9 + window 1.2 + side margins ~1.4 ≈ 3.5 m minimum for the demo. */
+const DEMO_OPENINGS_MIN_LENGTH = 3.5;
+
 function pickLongestWall(editor) {
   const walls = editor?.room?.walls || [];
   if (!walls.length) return null;
   return walls.reduce((a, b) => (b.length > a.length ? b : a));
+}
+
+/** Prefer a wall that fits door + window without overlap; else longest. */
+function pickDemoOpeningsWall(editor) {
+  const walls = editor?.room?.walls || [];
+  if (!walls.length) return null;
+  const fit = walls.filter((w) => w.length >= DEMO_OPENINGS_MIN_LENGTH);
+  if (fit.length) return fit.reduce((a, b) => (b.length > a.length ? b : a));
+  return pickLongestWall(editor);
 }
 
 async function demoOpenings(cursor, tour) {
@@ -168,13 +180,13 @@ async function demoOpenings(cursor, tour) {
   // 2) Open openings editor
   tour.setCopy({
     title: 'Проёмы в стенах',
-    text: 'Открываем редактор и ставим дверь у левого края стены.',
+    text: 'Открываем редактор — дверь и окно на одной длинной стене.',
     stepLabel: openStep,
   });
   await sleep(420);
 
-  const longest = pickLongestWall(editor);
-  if (longest) editor.selectedWallId = longest.id;
+  const beforeOpen = pickDemoOpeningsWall(editor);
+  if (beforeOpen) editor.selectedWallId = beforeOpen.id;
 
   if (openingsBtn && !openingsBtn.disabled) {
     await cursor.click(openingsBtn, { duration: CURSOR_MS });
@@ -183,6 +195,17 @@ async function demoOpenings(cursor, tour) {
   }
   await sleep(BEAT);
   tour.refreshSpotlight(sheet(), { radius: 14 });
+
+  // rebuildWalls() inside _openOpeningsModal regenerates wall IDs — re-pick and select
+  const demoWall = pickDemoOpeningsWall(editor);
+  if (demoWall && editor) {
+    editor._selectWall(demoWall.id);
+    const labelKey = demoWall.label.replace(/^Стена\s+/, '');
+    const chip = $$('.sketch-wall-chip').find(
+      (el) => el.textContent?.includes(labelKey) || el.textContent?.includes(`${demoWall.length.toFixed(1)} м`)
+    );
+    if (chip) await cursor.click(chip, { duration: CURSOR_MS });
+  }
 
   // 3) Door on the left
   const doorBtn = $('#sketchAddDoorBtn');
