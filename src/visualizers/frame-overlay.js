@@ -8,6 +8,7 @@ import {
 } from '../calculators/wall-frame.js';
 import { getBounds } from '../core/polygon-geometry.js';
 
+const EPS = 1e-6;
 const FRAME_COLOR = '#FF6B00';
 const FRAME_COLOR_MAIN = '#E65100';
 const HANGER_COLOR = '#1565C0';

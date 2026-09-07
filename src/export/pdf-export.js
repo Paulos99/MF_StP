@@ -72,10 +72,10 @@ function buildSchemeSummaryBody({ bom, room, dateStr, planImage }) {
   }
 
   const planBlock = planImage
-    ? `<div style="flex:0 0 92mm;text-align:center">
+    ? `<div style="flex:0 0 95mm;text-align:center">
         <div style="font-size:13px;font-weight:600;color:${BRAND};margin-bottom:6px">План помещения</div>
-        <img src="${planImage}" alt="План помещения" style="max-width:100%;max-height:78mm;object-fit:contain;border:1px solid #e1e5e8;border-radius:8px;background:#fff"/>
-        <div style="font-size:10px;color:#8899a4;margin-top:4px;line-height:1.4">Стены и проёмы (вид сверху)</div>
+        <img src="${planImage}" alt="План помещения" style="max-width:100%;max-height:82mm;object-fit:contain;border:1px solid #e1e5e8;border-radius:8px;background:#fff;padding:4px;box-sizing:border-box"/>
+        <div style="font-size:10px;color:#8899a4;margin-top:4px;line-height:1.4">Вид сверху · схема для печати</div>
       </div>`
     : '';
 
@@ -193,8 +193,9 @@ function buildCeilingBody({ bom, ceilingImage }) {
   const s = bom.ceiling.stats;
   const frame = bom.ceiling.frame;
   const imageBlock = ceilingImage
-    ? `<div style="flex:1;display:flex;align-items:center;justify-content:center;min-height:0;margin-top:8px">
-        <img src="${ceilingImage}" alt="Схема потолка" style="max-width:100%;max-height:175mm;object-fit:contain;border:1px solid #e1e5e8;border-radius:8px"/>
+    ? `<div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:0;margin-top:6px">
+        <div style="font-size:12px;font-weight:600;color:${BRAND};margin-bottom:4px;align-self:flex-start">Схема укладки (печать)</div>
+        <img src="${ceilingImage}" alt="Схема потолка" style="max-width:100%;max-height:168mm;object-fit:contain;border:1px solid #e1e5e8;border-radius:8px;background:#fff;padding:4px;box-sizing:border-box"/>
       </div>`
     : `<div style="margin-top:16px;padding:14px;border:1px dashed #c5d0d6;border-radius:8px;background:#f7faf9;color:#5f6b73;font-size:12px;line-height:1.5">
         Схема укладки не строится — расчёт выполнен по площади.
@@ -238,8 +239,9 @@ function buildWallBody({ wr, stats, image, mountingLabel, areaEstimate = false }
     : { label: 'Размер стены', value: `${wr.wall.length.toFixed(2)} × ${wallHeight.toFixed(2)} м` };
 
   const imageBlock = image
-    ? `<div style="flex:1;display:flex;align-items:center;justify-content:center;min-height:0">
-        <img src="${image}" alt="${wr.wall.label}" style="max-width:100%;max-height:150mm;object-fit:contain;border:1px solid #e1e5e8;border-radius:8px"/>
+    ? `<div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:0;margin-top:4px">
+        <div style="font-size:12px;font-weight:600;color:${BRAND};margin-bottom:4px;align-self:flex-start">Схема укладки (печать)</div>
+        <img src="${image}" alt="${wr.wall.label}" style="max-width:100%;max-height:145mm;object-fit:contain;border:1px solid #e1e5e8;border-radius:8px;background:#fff;padding:4px;box-sizing:border-box"/>
       </div>`
     : areaEstimate
       ? `<div style="margin-top:12px;padding:14px;border:1px dashed #c5d0d6;border-radius:8px;background:#f7faf9;color:#5f6b73;font-size:12px;line-height:1.5">
@@ -346,7 +348,7 @@ export async function exportCalculationPDF({
     pages.push(
       pageShell({
         title: `Расчёт материалов | ${dateStr}`,
-        subtitle: wallResult.wall.label,
+        subtitle: 'Развёртка стены',
         bodyHtml: buildWallBody({
           wr: wallResult,
           stats,
