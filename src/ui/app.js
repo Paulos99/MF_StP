@@ -100,10 +100,37 @@ function syncMobileParamsBtn() {
   btn.textContent = state.hasResults || state.inputMode
     ? 'Изменить параметры'
     : 'Ввести параметры расчёта';
+  const resultsBtn = $('mobileResultsBtn');
+  if (resultsBtn) resultsBtn.hidden = !state.hasResults;
 }
 
 function closeMobileSidebar() {
   document.body.classList.remove('mobile-sidebar-open');
+}
+
+/** Scroll results into view inside the mobile app-main scroller. */
+function scrollMobileResultsIntoView() {
+  if (!isMobileLayout()) return;
+  const main = document.querySelector('.app-main');
+  const target = $('resultsAside') || document.querySelector('.workspace-stats');
+  if (!main || !target) return;
+  requestAnimationFrame(() => {
+    const mainRect = main.getBoundingClientRect();
+    const tRect = target.getBoundingClientRect();
+    const delta = tRect.top - mainRect.top - 8;
+    if (Math.abs(delta) > 4) {
+      main.scrollBy({ top: delta, behavior: 'smooth' });
+    }
+  });
+}
+
+function revealMobileResultsAfterCalc() {
+  if (!isMobileLayout()) return;
+  closeMobileSidebar();
+  requestAnimationFrame(() => {
+    flashSchemeUpdated();
+    scrollMobileResultsIntoView();
+  });
 }
 
 function flashSchemeUpdated() {
@@ -238,9 +265,16 @@ function onExplicitChange() {
 }
 
 function syncCalcButtons() {
-  const label = state.hasResults ? 'Пересчитать' : 'Рассчитать';
+  const label = state.hasResults ? 'Пересчитать' : 'Готово — к результатам';
   const labelEl = $('calculateBtnLabel');
-  if (labelEl) labelEl.textContent = label;
+  if (labelEl) labelEl.textContent = isMobileLayout()
+    ? label
+    : (state.hasResults ? 'Пересчитать' : 'Рассчитать');
+  const btn = $('calculateBtn');
+  const wrap = document.querySelector('.sidebar-calc-wrap');
+  const show = !!state.inputMode;
+  if (btn) btn.hidden = !show;
+  if (wrap) wrap.hidden = !show;
   syncMobileParamsBtn();
 }
 
@@ -315,6 +349,7 @@ function syncChromeUi() {
 
   document.querySelector('.theme-toggle__label')?.toggleAttribute('hidden', !mode);
   document.body.classList.add('has-results-aside');
+  syncCalcButtons();
 }
 
 function clearResultsUi(message = '') {
@@ -735,6 +770,15 @@ function setInputMode(mode, { confirmSwitch = false, preserveGeometry = false } 
   if (next === 'draw' && prev !== 'draw') {
     maybeStartSketchTour();
   }
+
+  // Phone: free the canvas — sidebar covers the sketch otherwise
+  if (next === 'draw' && isMobileLayout() && !onboardingDemoActive) {
+    closeMobileSidebar();
+    requestAnimationFrame(() => {
+      sketchEditor?.fitToScreen?.();
+      sketchEditor?.render?.();
+    });
+  }
 }
 
 function maybeStartSketchTour() {
@@ -902,8 +946,7 @@ function setupFormListeners() {
   $('calculateBtn')?.addEventListener('click', () => {
     const ok = runCalculation();
     if (ok && isMobileLayout()) {
-      closeMobileSidebar();
-      requestAnimationFrame(() => flashSchemeUpdated());
+      revealMobileResultsAfterCalc();
     }
   });
 }
@@ -1593,16 +1636,27 @@ async function handlePDF() {
 function setupMobileActions() {
   $('mobileParamsBtn')?.addEventListener('click', () => {
     document.body.classList.add('mobile-sidebar-open');
+    // Bring calc CTA into view when reopening params after results
+    requestAnimationFrame(() => {
+      const wrap = document.querySelector('.sidebar-calc-wrap');
+      wrap?.scrollIntoView?.({ block: 'nearest' });
+    });
   });
   $('mobileSidebarClose')?.addEventListener('click', () => {
     closeMobileSidebar();
+    if (state.hasResults) scrollMobileResultsIntoView();
+  });
+  $('mobileResultsBtn')?.addEventListener('click', () => {
+    closeMobileSidebar();
+    scrollMobileResultsIntoView();
   });
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') closeMobileSidebar();
   });
   window.matchMedia(MOBILE_MQ).addEventListener('change', () => {
+    if (!isMobileLayout()) closeMobileSidebar();
     updateSchemeModeUi();
-    syncMobileParamsBtn();
+    syncCalcButtons();
   });
 }
 

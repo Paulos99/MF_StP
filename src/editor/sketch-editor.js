@@ -963,17 +963,19 @@ export class SketchEditor {
 
   _vertexHitRadius() {
     const coarse = this._isCoarsePointer();
-    const min = coarse ? 28 : 22;
-    const scale = coarse ? 16 : 14;
-    const boost = coarse ? 6 : 0;
+    const phone = window.matchMedia?.('(max-width: 899px)')?.matches;
+    const min = coarse || phone ? 32 : 22;
+    const scale = coarse || phone ? 18 : 14;
+    const boost = coarse || phone ? 8 : 0;
     return Math.max(min, scale * Math.sqrt(this.zoom)) + boost;
   }
 
   _edgeHitThreshold() {
     const coarse = this._isCoarsePointer();
-    const min = coarse ? 22 : 16;
-    const scale = coarse ? 14 : 12;
-    const boost = coarse ? 4 : 0;
+    const phone = window.matchMedia?.('(max-width: 899px)')?.matches;
+    const min = coarse || phone ? 26 : 16;
+    const scale = coarse || phone ? 16 : 12;
+    const boost = coarse || phone ? 6 : 0;
     return Math.max(min, scale * this.zoom) + boost;
   }
 
