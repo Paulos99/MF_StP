@@ -1011,9 +1011,8 @@ function setupFormListeners() {
     $(id)?.addEventListener('change', (e) => {
       const val = e.target?.value;
       const becameFramed = val === 'ceiling_framed' || val === 'wall_framed';
-      if (becameFramed && $('showFrame')) {
-        $('showFrame').checked = true;
-        if ($('showFrameMobile')) $('showFrameMobile').checked = true;
+      syncFrameToggleVisibility({ autoCheck: becameFramed });
+      if (becameFramed && isFrameOverlayRelevant()) {
         $('showFrameLabel')?.classList.add('is-highlighted');
         $('showFrameMobileLabel')?.classList.add('is-highlighted');
         setTimeout(() => {
@@ -1168,9 +1167,40 @@ function setupTabs() {
   });
 }
 
+/** Whether «Каркас» overlay toggle applies to the current scheme view. */
+function isFrameOverlayRelevant() {
+  const view = state.activeView || 'plan';
+  if (view === 'walls') {
+    return els.form.wallMounting?.value === 'wall_framed';
+  }
+  // plan / ceiling / sketch summary — ceiling mounting
+  return els.form.ceilingMounting?.value === 'ceiling_framed';
+}
+
+function syncFrameToggleVisibility({ autoCheck = false } = {}) {
+  const relevant = isFrameOverlayRelevant();
+  const label = $('showFrameLabel');
+  const mobileLabel = $('showFrameMobileLabel');
+  const cb = $('showFrame');
+  const cbMobile = $('showFrameMobile');
+
+  if (label) label.hidden = !relevant;
+  if (mobileLabel) mobileLabel.hidden = !relevant;
+
+  if (!relevant) {
+    if (cb) cb.checked = false;
+    if (cbMobile) cbMobile.checked = false;
+    label?.classList.remove('is-highlighted');
+    mobileLabel?.classList.remove('is-highlighted');
+  } else if (autoCheck) {
+    if (cb) cb.checked = true;
+    if (cbMobile) cbMobile.checked = true;
+  }
+}
+
 function syncPlanOverlayOptions() {
   const ceilingFramed = els.form.ceilingMounting?.value === 'ceiling_framed';
-  const showFrame = ($('showFrame')?.checked ?? false) && ceilingFramed;
+  const showFrame = ($('showFrame')?.checked ?? false) && ceilingFramed && isFrameOverlayRelevant();
   sketchEditor?.setOverlayOptions?.({
     showNumbers: $('showNumbers')?.checked ?? true,
     showFrame,
@@ -1194,6 +1224,8 @@ function setSchemeView(view) {
     resultsStage.hidden = state.activeView === 'plan';
   }
   updateSchemeModeUi();
+  syncFrameToggleVisibility();
+  syncPlanOverlayOptions();
 
   if (state.activeView === 'walls') {
     renderSelectedWall();
@@ -1630,6 +1662,8 @@ function applyOptionsToForm(options) {
   if (options.wallMounting) f.wallMounting.value = options.wallMounting;
   syncSegmentedFromSelect('ceilingMounting');
   syncSegmentedFromSelect('wallMounting');
+  syncFrameToggleVisibility();
+  syncPlanOverlayOptions();
   refreshWallSurfaceCheckboxes();
   state.options = { ...state.options, ...readOptionsFromForm() };
 }
@@ -1695,22 +1729,19 @@ async function handlePDF() {
   }
 
   syncFormToRoom();
-  renderPlanEditors();
-  const planImage = sketchEditor?.canvas?.toDataURL?.('image/png') ?? null;
-  renderCeiling();
-  const ceilingImage =
-    state.ceilingResult && state.ceilingCalc ? ceilingViz.exportToImage() : null;
-  const wallSurfaces = [];
-  if (state.wallResult) {
-    for (const wr of state.wallResult.wallResults) {
-      wallViz.setWallResult(wr, state.room.wallHeight);
-      wallViz.render({ showNumbers: $('showNumbers')?.checked ?? true });
-      wallSurfaces.push({
-        wallResult: wr,
-        image: wallViz.canvas.toDataURL('image/png'),
-      });
-    }
-  }
+  const room = state.calcRoom ?? state.room;
+  const { buildPdfSchemeImages } = await import('../export/pdf-scheme-render.js');
+  const showNumbers = $('showNumbers')?.checked ?? true;
+  const showFrame = $('showFrame')?.checked ?? false;
+  const { planImage, ceilingImage, wallSurfaces } = buildPdfSchemeImages({
+    room,
+    ceilingCalc: state.ceilingCalc,
+    ceilingResult: state.ceilingResult,
+    wallResults: state.wallResult?.wallResults ?? [],
+    options: state.options,
+    showNumbers,
+    showFrame,
+  });
   await exportCalculationPDF({
     bom: state.bom,
     room: state.room,
