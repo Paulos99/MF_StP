@@ -1691,10 +1691,9 @@ function init() {
     onDemoEnd: () => { onboardingDemoActive = false; },
     resetAfterDemo: () => resetUiAfterOnboarding(),
   });
-  if (!state.inputMode) {
-    appOnboarding.maybeAutoStart();
-  }
+  // Общее обучение стартует только по кнопке «Как работает?»
 }
+
 
 function resetUiAfterOnboarding() {
   onboardingDemoActive = true;

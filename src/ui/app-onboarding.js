@@ -542,11 +542,8 @@ export function setupAppOnboarding(hooks = {}) {
   };
 
   const maybeAutoStart = () => {
-    if (!tour.shouldAutoStart(APP_TUTORIAL_KEY)) return;
-    setTimeout(() => {
-      if (tour.isActive()) return;
-      start({ force: false });
-    }, 480);
+    // Общее обучение только по кнопке «Как работает?» — без автостарта.
+    return;
   };
 
   const helpBtn = document.getElementById('appHelpBtn');
