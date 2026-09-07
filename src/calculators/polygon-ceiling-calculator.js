@@ -61,6 +61,18 @@ export function findOrthogonalStartAnchors(vertices, epsDeg = 12) {
   return anchors;
 }
 
+
+/** Ключ кэша укладки: вершины + опции ориентации/монтажа. */
+export function ceilingLayoutCacheKey(vertices, extra = '') {
+  if (!vertices?.length) return `empty|${extra}`;
+  const parts = vertices.map((v) => {
+    const x = Math.round((v.x ?? 0) * 1000) / 1000;
+    const y = Math.round((v.y ?? 0) * 1000) / 1000;
+    return `${x},${y}`;
+  });
+  return `${parts.join(';')}|${extra}`;
+}
+
 export class PolygonPanelCalculator {
   constructor(vertices) {
     this.vertices = vertices;
@@ -308,6 +320,15 @@ export class PolygonPanelCalculator {
 
   _pointCoveredByPanel(px, py, panels) {
     for (const p of panels) {
+      // Быстрый AABB слота — отсекает большинство панелей до клипа
+      if (
+        px < p.x - 1e-6 ||
+        px > p.x + p.width + 1e-6 ||
+        py < p.y - 1e-6 ||
+        py > p.y + p.height + 1e-6
+      ) {
+        continue;
+      }
       const parts =
         p.meta?.clipParts?.length > 0
           ? p.meta.clipParts
@@ -339,8 +360,10 @@ export class PolygonPanelCalculator {
     const slotH =
       orientation === Orientation.VERTICAL ? this.panelLength : this.panelWidth;
 
-    const xs = this._axisStopsAnchored(0, b.maxX, slotW, ax);
-    const ys = this._axisStopsAnchored(0, b.maxY, slotH, ay);
+    // Расширенная сетка той же фазы якоря — плотный 5 см скан избыточен
+    // (он всё равно snap'ил к этой же фазе и блокировал UI на слабых телефонах).
+    const xs = this._axisStopsAnchored(-slotW, b.maxX + slotW, slotW, ax);
+    const ys = this._axisStopsAnchored(-slotH, b.maxY + slotH, slotH, ay);
 
     const slotKey = (x, y) => `${x.toFixed(4)}:${y.toFixed(4)}`;
     const occupied = new Set(panels.map((p) => slotKey(p.x, p.y)));
@@ -383,19 +406,6 @@ export class PolygonPanelCalculator {
       for (const col of xs) {
         for (const row of ys) {
           if (trySlot(col.start, row.start)) placed += 1;
-        }
-      }
-      // Точечный скан на случай слотов вне текущего списка stops
-      const step = 0.05;
-      for (let y = -slotH; y < b.maxY + slotH; y += step) {
-        for (let x = -slotW; x < b.maxX + slotW; x += step) {
-          const px = x + step / 2;
-          const py = y + step / 2;
-          if (!pointInPolygon(px, py, this.localVertices)) continue;
-          if (this._pointCoveredByPanel(px, py, panels)) continue;
-          const sx = ax + Math.floor((px - ax) / slotW + 1e-12) * slotW;
-          const sy = ay + Math.floor((py - ay) / slotH + 1e-12) * slotH;
-          if (trySlot(sx, sy)) placed += 1;
         }
       }
       if (!placed) break;
@@ -494,10 +504,28 @@ export class PolygonPanelCalculator {
     return false;
   }
 
-  calculateBestScheme() {
-    const anchors = this.getStartAnchors();
-    // Горизонталь первой: при равном скоре сохраняется схема от внешнего угла вроде A
-    const builders = [
+  /**
+   * Фаза сетки для билдера: якоря с одинаковой фазой дают ту же укладку.
+   */
+  _anchorPhaseKey(anchor, builder) {
+    const ax = anchor?.x ?? 0;
+    const ay = anchor?.y ?? 0;
+    const mod = (v, s) => {
+      const r = v % s;
+      return Math.abs(r) < 1e-9 || Math.abs(r - s) < 1e-9 ? 0 : r < 0 ? r + s : r;
+    };
+    if (builder.name === 'Вертикальная') {
+      return `${mod(ax, this.panelWidth).toFixed(4)}:${mod(ay, this.panelLength).toFixed(4)}`;
+    }
+    if (builder.name === 'Комбинированная') {
+      // scheme3: X-фаза вертикальной полосы; Y первой полосы — panelLength от ay
+      return `${mod(ax, this.panelWidth).toFixed(4)}:${mod(ay, this.panelLength).toFixed(4)}:s3`;
+    }
+    return `${mod(ax, this.panelLength).toFixed(4)}:${mod(ay, this.panelWidth).toFixed(4)}`;
+  }
+
+  _schemeBuilders() {
+    return [
       {
         name: 'Горизонтальная',
         build: (a) => this.fillHorizontalLayout([], a),
@@ -515,28 +543,71 @@ export class PolygonPanelCalculator {
         alsoOrient: Orientation.VERTICAL,
       },
     ];
+  }
+
+  _finalizeScheme(panels, builder, anchor) {
+    let next = this.fillCoverageGaps(panels, builder.orient, anchor);
+    if (builder.alsoOrient) {
+      next = this.fillCoverageGaps(next, builder.alsoOrient, anchor);
+    }
+    return this.filterThinPanels(next);
+  }
+
+  _fallbackScheme() {
+    return {
+      name: 'Вертикальная',
+      panels: this.filterThinPanels(this.fillVerticalLayout([])),
+      stats: this.getStatistics([]),
+    };
+  }
+
+  /**
+   * Список уникальных по фазе кандидатов (якорь × билдер).
+   * @param {{ fast?: boolean }} [options]
+   * fast — на слабых устройствах ограничиваем число якорей, но сохраняем все 3 билдера.
+   */
+  _bestSchemeCandidates(options = {}) {
+    const { fast = false } = options;
+    const anchors = this.getStartAnchors();
+    const builders = this._schemeBuilders();
     const requireFlush = anchors.some((a) => a.index >= 0);
+    void fast;
+    const anchorList = anchors;
+
+    // Не дедупим по фазе до проверки flush: одна фаза у B и C даёт
+    // одну сетку, но flush проходит только у части якорей.
+    const tasks = [];
+    for (const builder of builders) {
+      for (const anchor of anchorList) {
+        tasks.push({ builder, anchor, anchors: [anchor] });
+      }
+    }
+    return { anchors, builders, requireFlush, tasks };
+  }
+
+  /**
+   * @param {{ fast?: boolean, onCandidate?: (info: object) => void }} [options]
+   */
+  calculateBestScheme(options = {}) {
+    const { fast = false, onCandidate = null } = options;
+    const { anchors, requireFlush, tasks } = this._bestSchemeCandidates({ fast });
 
     let best = null;
     let bestScore = null;
 
-    const finalize = (panels, builder, anchor) => {
-      let next = this.fillCoverageGaps(panels, builder.orient, anchor);
-      if (builder.alsoOrient) {
-        next = this.fillCoverageGaps(next, builder.alsoOrient, anchor);
-      }
-      return this.filterThinPanels(next);
-    };
-
-    for (const anchor of anchors) {
-      for (const builder of builders) {
-        let panels = finalize(builder.build(anchor), builder, anchor);
-        if (requireFlush && !this.isAnchorFlushFull(panels, anchor)) {
+    const considerPass = (enforceFlush) => {
+      for (const { builder, anchor } of tasks) {
+        const panels = this._finalizeScheme(builder.build(anchor), builder, anchor);
+        if (enforceFlush && requireFlush && !this.isAnchorFlushFull(panels, anchor)) {
           continue;
         }
         const stats = this.getStatistics(panels);
         const score = this.scorePanels(panels, anchors);
         score.coverage = Number(stats.coveragePercent) || 0;
+        onCandidate?.({
+          name: `${builder.name} (${anchor.label || 'anchor'})`,
+          coverage: score.coverage,
+        });
         if (!bestScore || this.compareScores(score, bestScore) < 0) {
           bestScore = score;
           best = {
@@ -547,33 +618,69 @@ export class PolygonPanelCalculator {
           };
         }
       }
-    }
-
-    if (!best) {
-      for (const anchor of anchors) {
-        for (const builder of builders) {
-          const panels = finalize(builder.build(anchor), builder, anchor);
-          const stats = this.getStatistics(panels);
-          const score = this.scorePanels(panels, anchors);
-          score.coverage = Number(stats.coveragePercent) || 0;
-          if (!bestScore || this.compareScores(score, bestScore) < 0) {
-            bestScore = score;
-            best = {
-              name: `${builder.name} (${anchor.label || 'anchor'})`,
-              panels,
-              stats,
-              anchor,
-            };
-          }
-        }
-      }
-    }
-
-    return best || {
-      name: 'Вертикальная',
-      panels: this.filterThinPanels(this.fillVerticalLayout([])),
-      stats: this.getStatistics([]),
     };
+
+    considerPass(true);
+    if (!best) considerPass(false);
+
+    // fast: если уже есть отличное покрытие — не гоняем второй pass (уже сделали).
+    // Дополнительный early-exit по билдерам не делаем: H/V/S3 при 100% могут
+    // различаться по fullPanels (см. прямоугольник / диагональную комнату).
+
+    return best || this._fallbackScheme();
+  }
+
+  /**
+   * Тот же поиск, но с yield между кандидатами — UI успевает отрисоваться.
+   * @param {{ fast?: boolean, yieldFn?: () => (void|Promise<void>), onCandidate?: (info: object) => void }} [options]
+   */
+  async calculateBestSchemeAsync(options = {}) {
+    const { fast = false, yieldFn = null, onCandidate = null } = options;
+    const yieldFrame =
+      yieldFn ||
+      (() =>
+        new Promise((resolve) => {
+          if (typeof requestAnimationFrame === 'function') {
+            requestAnimationFrame(() => resolve());
+          } else {
+            setTimeout(resolve, 0);
+          }
+        }));
+
+    const { anchors, requireFlush, tasks } = this._bestSchemeCandidates({ fast });
+    let best = null;
+    let bestScore = null;
+
+    const considerPass = async (enforceFlush) => {
+      for (const { builder, anchor } of tasks) {
+        const panels = this._finalizeScheme(builder.build(anchor), builder, anchor);
+        if (enforceFlush && requireFlush && !this.isAnchorFlushFull(panels, anchor)) {
+          await yieldFrame();
+          continue;
+        }
+        const stats = this.getStatistics(panels);
+        const score = this.scorePanels(panels, anchors);
+        score.coverage = Number(stats.coveragePercent) || 0;
+        onCandidate?.({
+          name: `${builder.name} (${anchor.label || 'anchor'})`,
+          coverage: score.coverage,
+        });
+        if (!bestScore || this.compareScores(score, bestScore) < 0) {
+          bestScore = score;
+          best = {
+            name: `${builder.name} (${anchor.label || 'anchor'})`,
+            panels,
+            stats,
+            anchor,
+          };
+        }
+        await yieldFrame();
+      }
+    };
+
+    await considerPass(true);
+    if (!best) await considerPass(false);
+    return best || this._fallbackScheme();
   }
 
   getStatistics(panels) {

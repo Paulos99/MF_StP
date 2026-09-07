@@ -1,5 +1,5 @@
 import { Room } from '../core/room-model.js';
-import { PolygonPanelCalculator } from '../calculators/polygon-ceiling-calculator.js';
+import { PolygonPanelCalculator, ceilingLayoutCacheKey } from '../calculators/polygon-ceiling-calculator.js';
 import { WallCalculator } from '../calculators/wall-calculator.js';
 import { buildBOM, renderResultsHtml } from '../calculators/materials-bom.js';
 import { PANEL, PANEL_COVERAGE_AREA, RESERVES } from '../core/constants.js';
@@ -47,6 +47,33 @@ let ceilingViz;
 let wallViz;
 let autoRecalcTimer = null;
 let panelPreviewToken = 0;
+let calcGeneration = 0;
+let lastCeilingLayoutKey = null;
+
+function prefersLowEndCalc() {
+  try {
+    if (isMobileLayout()) return true;
+    if (window.matchMedia?.('(pointer: coarse)')?.matches) return true;
+    if (
+      typeof navigator !== 'undefined' &&
+      navigator.hardwareConcurrency > 0 &&
+      navigator.hardwareConcurrency <= 4
+    ) {
+      return true;
+    }
+  } catch (_) {
+    /* ignore */
+  }
+  return false;
+}
+
+function buildCeilingLayoutKey(vertices) {
+  const opts = state.options || {};
+  return ceilingLayoutCacheKey(
+    vertices,
+    `ceil=${!!opts.calcCeiling}|cm=${opts.ceilingMounting || ''}`
+  );
+}
 
 const els = {};
 
@@ -1027,8 +1054,8 @@ function setupFormListeners() {
     });
   });
 
-  $('calculateBtn')?.addEventListener('click', () => {
-    const ok = runCalculation();
+  $('calculateBtn')?.addEventListener('click', async () => {
+    const ok = await runCalculation();
     if (ok && isMobileLayout()) {
       revealMobileResultsAfterCalc();
     }
@@ -1076,8 +1103,8 @@ function setupSketchEditor() {
     onGeometryEdit: () => {
       markPanelPreviewStale();
     },
-    onGeometrySettle: ({ reason } = {}) => {
-      const ok = runCalculation({ silent: true });
+    onGeometrySettle: async ({ reason } = {}) => {
+      const ok = await runCalculation({ silent: true });
       // После «Готово» в проёмах сразу показать обновлённую развёртку стены
       if (ok && reason === 'openings-done') {
         setSchemeView('walls');
@@ -1095,6 +1122,7 @@ function setupSketchEditor() {
 
 function markPanelPreviewStale() {
   panelPreviewToken += 1;
+  lastCeilingLayoutKey = null;
   document.querySelectorAll('.workspace-stats .stat-card:not(.stat-card-button)').forEach((card) => {
     card.classList.add('is-recalculating');
   });
@@ -1377,7 +1405,7 @@ function runQuickAreaCalc(area) {
   updateLayoutMode();
 }
 
-function runCalculation(options = {}) {
+async function runCalculation(options = {}) {
   const { silent = false } = options;
   const errors = validateBeforeCalc();
   if (errors.length) {
@@ -1436,15 +1464,42 @@ function runCalculation(options = {}) {
 
   state.calcRoom = calcRoom;
 
-  state.ceilingResult = null;
   state.wallResult = null;
-  state.ceilingCalc = null;
+
+  const gen = ++calcGeneration;
 
   if (state.options.calcCeiling && !useAreaPath) {
-    const calc = new PolygonPanelCalculator(calcRoom.vertices);
-    state.ceilingCalc = calc;
-    state.ceilingResult = calc.calculateBestScheme();
+    const layoutKey = buildCeilingLayoutKey(calcRoom.vertices);
+    const canReuse =
+      lastCeilingLayoutKey === layoutKey &&
+      state.ceilingResult?.panels &&
+      state.ceilingCalc;
+    if (!canReuse) {
+      markStatsRecalculating();
+      const calc = new PolygonPanelCalculator(calcRoom.vertices);
+      const lowEnd = prefersLowEndCalc();
+      // Yield between candidates so sketch UI can paint on weak phones
+      const ceilingResult = await calc.calculateBestSchemeAsync({
+        fast: lowEnd,
+        yieldFn: () =>
+          new Promise((resolve) => {
+            if (typeof requestAnimationFrame === 'function') {
+              requestAnimationFrame(() => resolve());
+            } else {
+              setTimeout(resolve, 0);
+            }
+          }),
+      });
+      if (gen !== calcGeneration) return false;
+      state.ceilingCalc = calc;
+      state.ceilingResult = ceilingResult;
+      lastCeilingLayoutKey = layoutKey;
+    }
   } else if (state.options.calcCeiling && useAreaPath) {
+    state.ceilingResult = null;
+    state.ceilingCalc = null;
+    lastCeilingLayoutKey = null;
+
     const area = state.areaValue || parseFloat(f.areaOnlyInput?.value) || 0;
     const panels = Math.ceil(area / PANEL_COVERAGE_AREA);
     const withReserve = Math.ceil(panels * (1 + RESERVES.panels));
@@ -1466,7 +1521,13 @@ function runCalculation(options = {}) {
       },
     };
     state.ceilingCalc = new PolygonPanelCalculator(calcRoom.vertices);
+  } else if (!state.options.calcCeiling) {
+    state.ceilingResult = null;
+    state.ceilingCalc = null;
+    lastCeilingLayoutKey = null;
   }
+
+  if (gen !== calcGeneration) return false;
 
   if (state.options.selectedWallIds.length > 0 && state.inputMode === 'area') {
     const walls = state.areaWalls.filter((w) => w.enabled && w.area > 0);
