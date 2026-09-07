@@ -313,17 +313,13 @@ export function renderCeilingSchemeForPdf({
   if (local.length < 3) return null;
 
   const roomB = getBounds(local);
-  // Include cut-slot overhangs so dashed outlines + hatch outside the room stay on-canvas
-  let minX = roomB.minX;
-  let minY = roomB.minY;
-  let maxX = roomB.maxX;
-  let maxY = roomB.maxY;
-  for (const p of panels) {
-    minX = Math.min(minX, p.x);
-    minY = Math.min(minY, p.y);
-    maxX = Math.max(maxX, p.x + p.width);
-    maxY = Math.max(maxY, p.y + p.height);
-  }
+  // Match on-screen ceiling scheme: frame the room, only a thin fringe for overhang waste.
+  // Expanding to full cut-slot AABB previously drew a phantom extra row/column of hatch.
+  const OVERHANG_VIEW_PAD_M = 0.08;
+  const minX = roomB.minX - OVERHANG_VIEW_PAD_M;
+  const minY = roomB.minY - OVERHANG_VIEW_PAD_M;
+  const maxX = roomB.maxX + OVERHANG_VIEW_PAD_M;
+  const maxY = roomB.maxY + OVERHANG_VIEW_PAD_M;
   const rw = Math.max(maxX - minX, 0.5);
   const rh = Math.max(maxY - minY, 0.5);
   const roomW = Math.max(roomB.maxX - roomB.minX, 0.5);
@@ -350,6 +346,16 @@ export function renderCeilingSchemeForPdf({
     ctx.closePath();
   };
 
+  /** Clamp a rect to the viewable overhang fringe (room ∪ pad). */
+  const clampToView = (x, y, w, h) => {
+    const x0 = Math.max(x, minX);
+    const y0 = Math.max(y, minY);
+    const x1 = Math.min(x + w, maxX);
+    const y1 = Math.min(y + h, maxY);
+    if (x1 <= x0 || y1 <= y0) return null;
+    return { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
+  };
+
   // Room background
   ctx.save();
   ctx.translate(ox, oy);
@@ -365,11 +371,13 @@ export function renderCeilingSchemeForPdf({
   const isOverhangCut = (panel) =>
     panel.isCut && !rectInsidePolygon(panel.x, panel.y, panel.width, panel.height, local);
 
-  // Pass 1: hatch full slots that overhang the room (waste / cut-off outside the contour)
+  // Pass 1: hatch only the waste fringe outside the room (not a full extra row of slots)
   for (const panel of panels) {
     if (!isOverhangCut(panel)) continue;
+    const view = clampToView(panel.x, panel.y, panel.width, panel.height);
+    if (!view) continue;
     ctx.fillStyle = cutPat || PRINT.cutFill;
-    ctx.fillRect(mx(panel.x), my(panel.y), panel.width * scale, panel.height * scale);
+    ctx.fillRect(mx(view.x), my(view.y), view.w * scale, view.h * scale);
   }
 
   // Pass 2: solid fills inside the room; hatch only fully-inside cut remnants
@@ -412,7 +420,7 @@ export function renderCeilingSchemeForPdf({
   }
 
   if (showFrame && frameBounds) {
-    // frame-overlay expects untranslated local metres × scale; shift by expanded origin
+    // frame-overlay expects untranslated local metres × scale; shift by view origin
     ctx.save();
     ctx.translate(-minX * scale, -minY * scale);
     drawFrameGrid(ctx, frameBounds, scale, {
@@ -423,7 +431,7 @@ export function renderCeilingSchemeForPdf({
   }
   ctx.restore(); // clip
 
-  // Pass 3: dashed full-panel outlines for cuts (incl. overhang past the room edge)
+  // Pass 3: dashed cut outlines, clamped to the same view fringe as the site
   for (const panel of panels) {
     if (!panel.isCut) continue;
     ctx.strokeStyle = PRINT.panelStroke;
@@ -431,7 +439,10 @@ export function renderCeilingSchemeForPdf({
     ctx.setLineDash([5, 3]);
     const parts = panelParts(panel);
     if (isOverhangCut(panel) || parts.length === 1) {
-      ctx.strokeRect(mx(panel.x), my(panel.y), panel.width * scale, panel.height * scale);
+      const view = clampToView(panel.x, panel.y, panel.width, panel.height);
+      if (view) {
+        ctx.strokeRect(mx(view.x), my(view.y), view.w * scale, view.h * scale);
+      }
     } else {
       strokeExternalEdges(ctx, parts, (x, y) => ({ x: mx(x), y: my(y) }));
     }
