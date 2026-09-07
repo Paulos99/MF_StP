@@ -183,6 +183,13 @@ function exitMobileSketchStep({ markSummary = true, openParams = false } = {}) {
     sketchEditor?.fitToScreen?.();
     sketchEditor?.render?.();
     if (markSummary) syncMobileSketchSummary();
+    // Second frame: stage is visible again in summary — re-fit preview size
+    if (markSummary) {
+      requestAnimationFrame(() => {
+        sketchEditor?.fitToScreen?.();
+        sketchEditor?.render?.();
+      });
+    }
   });
   if (openParams) openMobileParamsAfterSketch();
 }

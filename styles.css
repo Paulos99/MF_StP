@@ -5829,6 +5829,11 @@ body.theme-dark .results-preview__fade {
         height: min(54dvh, 460px);
     }
 
+    /* Taller card when summary shows the drawn scheme preview */
+    .scheme-card:has(#sketchEditorHost.is-mobile-summary:not(.is-fullscreen)) {
+        height: min(62dvh, 560px);
+    }
+
     .scheme-card .canvas-stage {
         min-height: 0;
     }
@@ -7416,27 +7421,59 @@ body.theme-dark .rb-wall__panels-unit {
         display: none !important;
     }
 
-    /* Mobile summary stub: no mini-editor chrome outside fullscreen step */
+    /* Mobile summary: tall read-only scheme preview (no edit chrome) */
     .sketch-mobile-summary-stub {
         display: none;
+    }
+
+    .sketch-inline.is-mobile-summary:not(.is-fullscreen) {
+        min-height: min(52dvh, 480px);
+    }
+
+    .sketch-inline.is-mobile-summary:not(.is-fullscreen) .sketch-stage {
+        display: flex;
+        flex: 1 1 auto;
+        min-height: min(46dvh, 420px);
+        pointer-events: none;
+        touch-action: none;
+    }
+
+    .sketch-inline.is-mobile-summary:not(.is-fullscreen) .sketch-canvas-wrap,
+    .sketch-inline.is-mobile-summary:not(.is-fullscreen) .sketch-canvas-wrap canvas {
+        pointer-events: none;
+        touch-action: none;
+    }
+
+    .sketch-inline.is-mobile-summary:not(.is-fullscreen) .sketch-hint-bar--inline,
+    .sketch-inline.is-mobile-summary:not(.is-fullscreen) .sketch-float-toolbar,
+    .sketch-inline.is-mobile-summary:not(.is-fullscreen) .sketch-float-zoom,
+    .sketch-inline.is-mobile-summary:not(.is-fullscreen) .sketch-mobile-step-bar,
+    .sketch-inline.is-mobile-summary:not(.is-fullscreen) #sketchFitBtn,
+    .sketch-inline.is-mobile-summary:not(.is-fullscreen) #sketchEdgeActions,
+    .sketch-inline.is-mobile-summary:not(.is-fullscreen) #sketchEmptyHint,
+    .sketch-inline.is-mobile-summary:not(.is-fullscreen) #sketchBgPanel,
+    .sketch-inline.is-mobile-summary:not(.is-fullscreen) #sketchKeypadHost,
+    .sketch-inline.is-mobile-summary:not(.is-fullscreen) #sketchGridLegend,
+    .sketch-inline.is-mobile-summary:not(.is-fullscreen) #sketchToast {
+        display: none !important;
     }
 
     .sketch-inline.is-mobile-summary:not(.is-fullscreen) .sketch-mobile-summary-stub {
         display: flex;
         flex-direction: column;
-        align-items: center;
-        justify-content: center;
-        gap: 6px;
-        flex: 1 1 auto;
-        min-height: 120px;
-        padding: 20px 16px;
-        text-align: center;
+        align-items: stretch;
+        justify-content: flex-start;
+        gap: 2px;
+        flex: 0 0 auto;
+        min-height: 0;
+        padding: 8px 14px 4px;
+        text-align: left;
         background: #f0f4f2;
     }
 
     .sketch-inline.is-mobile-summary:not(.is-fullscreen) .sketch-mobile-summary-stub__title {
         margin: 0;
-        font-size: 16px;
+        font-size: 14px;
         font-weight: 650;
         color: var(--text-primary, #1a1f1c);
     }
@@ -7452,21 +7489,12 @@ body.theme-dark .rb-wall__panels-unit {
         max-width: 100%;
     }
 
-    .sketch-inline.is-mobile-summary:not(.is-fullscreen) .sketch-hint-bar--inline,
-    .sketch-inline.is-mobile-summary:not(.is-fullscreen) .sketch-stage,
-    .sketch-inline.is-mobile-summary:not(.is-fullscreen) .sketch-float-toolbar,
-    .sketch-inline.is-mobile-summary:not(.is-fullscreen) .sketch-float-zoom,
-    .sketch-inline.is-mobile-summary:not(.is-fullscreen) .sketch-mobile-step-bar,
-    .sketch-inline.is-mobile-summary:not(.is-fullscreen) #sketchFitBtn {
-        display: none !important;
-    }
-
     .sketch-inline.is-mobile-summary:not(.is-fullscreen) .sketch-inline-footer {
         display: flex;
         flex-direction: column;
         align-items: stretch;
         gap: 0;
-        padding: 0 12px 12px;
+        padding: 8px 12px 12px;
         border-top: none;
         background: #f0f4f2;
     }
@@ -7485,6 +7513,7 @@ body.theme-dark .rb-wall__panels-unit {
         font-size: 15px;
         justify-content: center;
         align-items: center;
+        pointer-events: auto;
     }
 
     body.sketch-mobile-step-open .mobile-toolbar,
