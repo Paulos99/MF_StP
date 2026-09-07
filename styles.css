@@ -118,6 +118,7 @@ div:focus:not([contenteditable="true"]):not(input):not(textarea) {
     --touch-min: 44px;
     --touch-gap: 8px;
     --safe-bottom: env(safe-area-inset-bottom, 0px);
+    --safe-top: env(safe-area-inset-top, 0px);
     --mobile-footer-h: 72px;
 }
 
@@ -3463,7 +3464,7 @@ body.theme-dark .tour-btn--ghost {
         animation: keypadInMobile var(--duration-normal) var(--ease-out);
     }
 
-    .sketch-canvas-wrap:has(#sketchKeypadHost:not([hidden])) .sketch-float-zoom {
+    .sketch-stage:has(#sketchKeypadHost:not([hidden])) .sketch-float-zoom {
         opacity: 0;
         pointer-events: none;
         visibility: hidden;
@@ -6099,6 +6100,62 @@ body.theme-dark .results-preview__fade {
     to { opacity: 1; transform: none; }
 }
 
+.sketch-stage {
+    position: relative;
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+}
+
+.sketch-stage > .sketch-canvas-wrap {
+    flex: 1;
+    min-height: 0;
+    height: auto;
+}
+
+.sketch-mobile-step-bar {
+    display: none;
+    flex-shrink: 0;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 10px;
+    padding-top: calc(8px + var(--safe-top));
+    background: #fff;
+    border-bottom: 1px solid #e8ecea;
+    z-index: 6;
+}
+
+.sketch-mobile-step-bar__title {
+    flex: 1;
+    min-width: 0;
+    font-size: 15px;
+    font-weight: 700;
+    color: var(--heading-color, #1a1f24);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.sketch-mobile-step-bar__back {
+    flex-shrink: 0;
+    font-size: 22px;
+    line-height: 1;
+    width: var(--touch-min);
+    height: var(--touch-min);
+}
+
+.sketch-mobile-step-bar .btn {
+    flex-shrink: 0;
+    min-height: 40px;
+    padding: 0 16px;
+}
+
+.sketch-mobile-done-footer,
+.sketch-mobile-edit-footer {
+    display: none;
+}
+
 .sketch-inline.is-fullscreen {
     position: fixed;
     inset: 0;
@@ -6106,6 +6163,7 @@ body.theme-dark .results-preview__fade {
     border-radius: 0;
     animation: fsIn 0.28s ease;
 }
+
 
 @keyframes fsIn {
     from { opacity: 0.7; transform: scale(0.985); }
@@ -7209,5 +7267,140 @@ body.theme-dark .rb-wall__panels-unit {
     .workspace-results,
     .workspace-stats {
         max-width: 100%;
+    }
+}
+
+/* Mobile dedicated fullscreen sketch step */
+@media (max-width: 899px) {
+    .sketch-inline.is-fullscreen.is-mobile-step {
+        position: fixed;
+        inset: 0;
+        z-index: 1100;
+        border-radius: 0;
+        background: #f0f4f2;
+        padding: 0;
+        height: 100dvh;
+        max-height: 100dvh;
+        width: 100%;
+    }
+
+    .sketch-inline.is-fullscreen.is-mobile-step .sketch-mobile-step-bar {
+        display: flex;
+    }
+
+    .sketch-inline.is-fullscreen.is-mobile-step .sketch-mobile-step-bar[hidden] {
+        display: flex !important;
+    }
+
+    .sketch-inline.is-fullscreen.is-mobile-step .sketch-hint-bar--inline {
+        flex-shrink: 0;
+        padding: 6px 12px;
+        font-size: 12px;
+        background: #fff;
+        border-bottom: 1px solid #e8ecea;
+    }
+
+    .sketch-inline.is-fullscreen.is-mobile-step .sketch-stage {
+        flex: 1;
+        min-height: 0;
+        display: flex;
+        flex-direction: column;
+    }
+
+    /* Tools as chrome — not floating over drawable area */
+    .sketch-inline.is-fullscreen.is-mobile-step .sketch-float-toolbar {
+        position: static;
+        top: auto;
+        left: auto;
+        right: auto;
+        max-width: none;
+        width: 100%;
+        border-radius: 0;
+        box-shadow: none;
+        border: none;
+        border-bottom: 1px solid #e8ecea;
+        background: #fff;
+        padding: 6px 8px;
+        gap: 6px;
+        flex-wrap: wrap;
+        justify-content: flex-start;
+        flex-shrink: 0;
+        z-index: 2;
+    }
+
+    .sketch-inline.is-fullscreen.is-mobile-step .sketch-float-zoom {
+        position: static;
+        bottom: auto;
+        right: auto;
+        left: auto;
+        max-width: none;
+        width: 100%;
+        border-radius: 0;
+        box-shadow: none;
+        border: none;
+        border-top: 1px solid #e8ecea;
+        background: #fff;
+        padding: 6px 8px;
+        gap: 6px;
+        flex-wrap: wrap;
+        justify-content: flex-start;
+        flex-shrink: 0;
+        z-index: 2;
+        opacity: 1;
+        visibility: visible;
+        pointer-events: auto;
+    }
+
+    .sketch-inline.is-fullscreen.is-mobile-step .sketch-canvas-wrap {
+        position: relative;
+        flex: 1 1 auto;
+        min-height: 0;
+        height: auto;
+        width: 100%;
+    }
+
+    .sketch-inline.is-fullscreen.is-mobile-step .sketch-inline-footer {
+        flex-shrink: 0;
+        padding: 8px 12px calc(8px + var(--safe-bottom));
+        gap: 10px;
+        background: #fff;
+        border-top: 1px solid #e8ecea;
+    }
+
+    .sketch-inline.is-fullscreen.is-mobile-step .sketch-mobile-done-footer {
+        display: inline-flex;
+        margin-left: auto;
+        min-height: 44px;
+        padding: 0 18px;
+    }
+
+    .sketch-inline.is-fullscreen.is-mobile-step .sketch-mobile-done-footer[hidden] {
+        display: inline-flex !important;
+    }
+
+    .sketch-inline.is-fullscreen.is-mobile-step #sketchFitBtn {
+        display: none;
+    }
+
+    /* Keypad stays above bottom chrome inside canvas */
+    .sketch-inline.is-fullscreen.is-mobile-step #sketchKeypadHost {
+        bottom: 12px;
+        right: 8px;
+        left: auto;
+    }
+
+    /* Compact summary card after «Готово»: «Изменить схему» */
+    .sketch-inline.is-mobile-summary .sketch-mobile-edit-footer:not([hidden]) {
+        display: inline-flex;
+        margin-left: auto;
+        min-height: 40px;
+        padding: 0 12px;
+        font-size: 13px;
+    }
+
+    body.sketch-mobile-step-open .mobile-toolbar,
+    body.sketch-mobile-step-open .app-header {
+        visibility: hidden;
+        pointer-events: none;
     }
 }

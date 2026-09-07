@@ -47,6 +47,7 @@ export class SketchEditor {
     onRoomChange,
     onGeometryEdit,
     onGeometrySettle,
+    onMobileStepDone,
     dialogsEl = null,
     inline = true,
   } = {}) {
@@ -81,6 +82,7 @@ export class SketchEditor {
     this.onRoomChange = onRoomChange;
     this.onGeometryEdit = onGeometryEdit;
     this.onGeometrySettle = onGeometrySettle;
+    this.onMobileStepDone = onMobileStepDone;
     this._active = inline;
     this._panelMode = 'idle';
     this._panelLayout = null;
@@ -216,7 +218,18 @@ export class SketchEditor {
 
   _bindUi() {
     this._q('#sketchCloseBtn')?.addEventListener('click', () => this.close(false));
-    this._q('#sketchDoneBtn')?.addEventListener('click', () => this.close(true));
+    const exitMobileStepOrClose = (save) => {
+      if (this.inline && this.isMobileStep()) {
+        if (save && this._canSave()) this._emitApply();
+        this.setMobileSketchStep(false);
+        this.onMobileStepDone?.({ saved: !!save });
+        return;
+      }
+      this.close(!!save);
+    };
+    this._q('#sketchDoneBtn')?.addEventListener('click', () => exitMobileStepOrClose(true));
+    this._q('#sketchMobileDoneBtn')?.addEventListener('click', () => exitMobileStepOrClose(true));
+    this._q('#sketchMobileBackBtn')?.addEventListener('click', () => exitMobileStepOrClose(true));
     this._q('#sketchUndoBtn')?.addEventListener('click', () => this.undo());
     this._q('#sketchRedoBtn')?.addEventListener('click', () => this.redo());
     this._q('#sketchClearBtn')?.addEventListener('click', () => this.clear());
@@ -308,7 +321,12 @@ export class SketchEditor {
     window.addEventListener('keydown', (e) => {
       if (!this._isInteractive()) return;
       if (e.key === 'Escape' && this.host?.classList.contains('is-fullscreen')) {
-        this.toggleFullscreen();
+        if (this.isMobileStep()) {
+          this.setMobileSketchStep(false);
+          this.onMobileStepDone?.({ saved: false });
+        } else {
+          this.setFullscreen(false);
+        }
         e.preventDefault();
         return;
       }
@@ -882,22 +900,64 @@ export class SketchEditor {
     this.render();
   }
 
-  toggleFullscreen() {
+  isFullscreen() {
+    return !!this.host?.classList.contains('is-fullscreen');
+  }
+
+  isMobileStep() {
+    return !!this.host?.classList.contains('is-mobile-step');
+  }
+
+  /**
+   * @param {boolean} on
+   * @param {{ mobileStep?: boolean }} [opts]
+   */
+  setFullscreen(on, { mobileStep = false } = {}) {
     const host = this.host;
     if (!host) return;
-    const on = !host.classList.contains('is-fullscreen');
-    host.classList.toggle('is-fullscreen', on);
-    document.body.classList.toggle('sketch-fullscreen-open', on);
+    const next = !!on;
+    const was = host.classList.contains('is-fullscreen');
+    host.classList.toggle('is-fullscreen', next);
+    // Mobile dedicated sketch step: chrome above/below canvas + Готово
+    const useMobileStep = next && !!mobileStep;
+    host.classList.toggle('is-mobile-step', useMobileStep);
+    if (!next) host.classList.remove('is-mobile-step');
+    document.body.classList.toggle('sketch-fullscreen-open', next);
+    document.body.classList.toggle('sketch-mobile-step-open', useMobileStep);
+
+    const stepBar = this._q('#sketchMobileStepBar');
+    if (stepBar) stepBar.hidden = !useMobileStep;
+    const doneBtn = this._q('#sketchDoneBtn');
+    if (doneBtn) doneBtn.hidden = !useMobileStep;
+    const editBtn = this._q('#sketchMobileEditBtn');
+    // Show «Изменить схему» on mobile summary (draw mode, not fullscreen)
+    if (editBtn) {
+      const showEdit = !next && host.classList.contains('is-mobile-summary');
+      editBtn.hidden = !showEdit;
+    }
+
     const btn = this._q('#sketchFitBtn');
     if (btn) {
-      btn.title = on ? 'Свернуть' : 'На весь экран';
+      btn.title = next ? 'Свернуть' : 'На весь экран';
       btn.setAttribute('aria-label', btn.title);
-      btn.classList.toggle('is-active', on);
+      btn.classList.toggle('is-active', next);
     }
-    requestAnimationFrame(() => {
-      this.render();
-      this.fitToScreen();
-    });
+    if (was !== next || useMobileStep) {
+      requestAnimationFrame(() => {
+        this.render();
+        this.fitToScreen();
+      });
+    }
+  }
+
+  toggleFullscreen() {
+    this.setFullscreen(!this.isFullscreen(), { mobileStep: false });
+  }
+
+  /** Enter / leave the phone fullscreen sketch step. */
+  setMobileSketchStep(on) {
+    if (on) this.setFullscreen(true, { mobileStep: true });
+    else this.setFullscreen(false, { mobileStep: false });
   }
 
   setOverlayOptions({ showNumbers, showFrame } = {}) {

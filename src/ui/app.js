@@ -108,6 +108,37 @@ function closeMobileSidebar() {
   document.body.classList.remove('mobile-sidebar-open');
 }
 
+function enterMobileSketchStep() {
+  if (!isMobileLayout() || state.inputMode !== 'draw') return;
+  if (onboardingDemoActive) return;
+  closeMobileSidebar();
+  const host = $('sketchEditorHost');
+  host?.classList.remove('is-mobile-summary');
+  sketchEditor?.setMobileSketchStep?.(true);
+  requestAnimationFrame(() => {
+    sketchEditor?.fitToScreen?.();
+    sketchEditor?.render?.();
+  });
+}
+
+function exitMobileSketchStep({ markSummary = true } = {}) {
+  const host = $('sketchEditorHost');
+  if (markSummary && state.inputMode === 'draw' && isMobileLayout()) {
+    host?.classList.add('is-mobile-summary');
+    const editBtn = $('sketchMobileEditBtn');
+    if (editBtn) editBtn.hidden = false;
+  } else {
+    host?.classList.remove('is-mobile-summary');
+    const editBtn = $('sketchMobileEditBtn');
+    if (editBtn) editBtn.hidden = true;
+  }
+  sketchEditor?.setMobileSketchStep?.(false);
+  requestAnimationFrame(() => {
+    sketchEditor?.fitToScreen?.();
+    sketchEditor?.render?.();
+  });
+}
+
 /** Scroll results into view inside the mobile app-main scroller. */
 function scrollMobileResultsIntoView() {
   if (!isMobileLayout()) return;
@@ -704,6 +735,7 @@ function setInputMode(mode, { confirmSwitch = false, preserveGeometry = false } 
   }
 
   if (!next) {
+    exitMobileSketchStep({ markSummary: false });
     clearResultsUi('Выберите способ слева');
     syncModePanelsUi();
     updateSchemeModeUi();
@@ -771,13 +803,11 @@ function setInputMode(mode, { confirmSwitch = false, preserveGeometry = false } 
     maybeStartSketchTour();
   }
 
-  // Phone: free the canvas — sidebar covers the sketch otherwise
+  // Phone: dedicated fullscreen sketch step (not a short inline card)
   if (next === 'draw' && isMobileLayout() && !onboardingDemoActive) {
-    closeMobileSidebar();
-    requestAnimationFrame(() => {
-      sketchEditor?.fitToScreen?.();
-      sketchEditor?.render?.();
-    });
+    enterMobileSketchStep();
+  } else if (prev === 'draw' && next !== 'draw') {
+    exitMobileSketchStep({ markSummary: false });
   }
 }
 
@@ -957,6 +987,9 @@ function setupSketchEditor() {
   sketchEditor = new SketchEditor(host, {
     inline: true,
     dialogsEl: $('sketchEditorModal'),
+    onMobileStepDone: () => {
+      exitMobileSketchStep({ markSummary: true });
+    },
     onApply: ({ vertices, edgeDimensions, diagonalDimensions, wallHeight }) => {
       if (state.inputMode === 'dims') return;
       state.room.setVertices(vertices, edgeDimensions, diagonalDimensions);
@@ -1654,9 +1687,25 @@ function setupMobileActions() {
     if (e.key === 'Escape') closeMobileSidebar();
   });
   window.matchMedia(MOBILE_MQ).addEventListener('change', () => {
-    if (!isMobileLayout()) closeMobileSidebar();
+    if (!isMobileLayout()) {
+      closeMobileSidebar();
+      exitMobileSketchStep({ markSummary: false });
+    } else if (state.inputMode === 'draw' && !onboardingDemoActive) {
+      enterMobileSketchStep();
+    }
     updateSchemeModeUi();
     syncCalcButtons();
+  });
+
+  $('sketchMobileEditBtn')?.addEventListener('click', () => {
+    enterMobileSketchStep();
+  });
+
+  $('sketchEditorHost')?.addEventListener('pointerdown', (e) => {
+    if (!isMobileLayout() || state.inputMode !== 'draw') return;
+    if (sketchEditor?.isFullscreen?.()) return;
+    if (e.target.closest('#sketchMobileEditBtn, #sketchDoneBtn, #sketchMobileDoneBtn, #sketchMobileBackBtn')) return;
+    enterMobileSketchStep();
   });
 }
 
