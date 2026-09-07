@@ -4,7 +4,7 @@
  * with light print styling — not screenshots of the on-screen UI.
  */
 import { OPENING_TYPES } from '../core/constants.js';
-import { getBounds } from '../core/polygon-geometry.js';
+import { getBounds, rectInsidePolygon } from '../core/polygon-geometry.js';
 import {
   drawFrameGrid,
   drawWallFrameGrid,
@@ -312,9 +312,22 @@ export function renderCeilingSchemeForPdf({
   const local = (vertices ?? []).map((v) => ({ x: v.x - offsetX, y: v.y - offsetY }));
   if (local.length < 3) return null;
 
-  const b = getBounds(local);
-  const rw = Math.max(b.maxX - b.minX, 0.5);
-  const rh = Math.max(b.maxY - b.minY, 0.5);
+  const roomB = getBounds(local);
+  // Include cut-slot overhangs so dashed outlines + hatch outside the room stay on-canvas
+  let minX = roomB.minX;
+  let minY = roomB.minY;
+  let maxX = roomB.maxX;
+  let maxY = roomB.maxY;
+  for (const p of panels) {
+    minX = Math.min(minX, p.x);
+    minY = Math.min(minY, p.y);
+    maxX = Math.max(maxX, p.x + p.width);
+    maxY = Math.max(maxY, p.y + p.height);
+  }
+  const rw = Math.max(maxX - minX, 0.5);
+  const rh = Math.max(maxY - minY, 0.5);
+  const roomW = Math.max(roomB.maxX - roomB.minX, 0.5);
+  const roomH = Math.max(roomB.maxY - roomB.minY, 0.5);
   const padL = 64;
   const padR = 40;
   const padT = 52;
@@ -325,53 +338,63 @@ export function renderCeilingSchemeForPdf({
   const { canvas, ctx } = createPrintSurface(padL + rw * scale + padR, padT + rh * scale + padB);
   const ox = padL;
   const oy = padT;
+  const mx = (x) => (x - minX) * scale;
+  const my = (y) => (y - minY) * scale;
+
+  const roomPath = () => {
+    ctx.beginPath();
+    ctx.moveTo(mx(local[0].x), my(local[0].y));
+    for (let i = 1; i < local.length; i++) {
+      ctx.lineTo(mx(local[i].x), my(local[i].y));
+    }
+    ctx.closePath();
+  };
 
   // Room background
   ctx.save();
   ctx.translate(ox, oy);
-  ctx.beginPath();
-  ctx.moveTo(local[0].x * scale, local[0].y * scale);
-  for (let i = 1; i < local.length; i++) {
-    ctx.lineTo(local[i].x * scale, local[i].y * scale);
-  }
-  ctx.closePath();
+  roomPath();
   ctx.fillStyle = PRINT.roomFill;
   ctx.fill();
   ctx.strokeStyle = PRINT.panelStroke;
   ctx.lineWidth = 2;
   ctx.stroke();
 
-  // Clip panels to room
-  ctx.save();
-  ctx.beginPath();
-  ctx.moveTo(local[0].x * scale, local[0].y * scale);
-  for (let i = 1; i < local.length; i++) {
-    ctx.lineTo(local[i].x * scale, local[i].y * scale);
-  }
-  ctx.closePath();
-  ctx.clip();
-
   const cutPat = makeCutPattern(ctx, PRINT.cutFill);
   const numbersOk = showNumbers && shouldShowNumbers(panels, scale);
+  const isOverhangCut = (panel) =>
+    panel.isCut && !rectInsidePolygon(panel.x, panel.y, panel.width, panel.height, local);
+
+  // Pass 1: hatch full slots that overhang the room (waste / cut-off outside the contour)
+  for (const panel of panels) {
+    if (!isOverhangCut(panel)) continue;
+    ctx.fillStyle = cutPat || PRINT.cutFill;
+    ctx.fillRect(mx(panel.x), my(panel.y), panel.width * scale, panel.height * scale);
+  }
+
+  // Pass 2: solid fills inside the room; hatch only fully-inside cut remnants
+  ctx.save();
+  roomPath();
+  ctx.clip();
 
   for (const panel of panels) {
     const parts = panelParts(panel);
-    ctx.fillStyle = panel.isCut ? cutPat || PRINT.cutFill : PRINT.panelFill;
+    const overhang = isOverhangCut(panel);
+    ctx.fillStyle =
+      panel.isCut && !overhang ? cutPat || PRINT.cutFill : PRINT.panelFill;
     ctx.strokeStyle = PRINT.panelStroke;
-    ctx.lineWidth = panel.isCut ? 1.4 : 1.1;
-    ctx.setLineDash(panel.isCut ? [5, 3] : []);
+    ctx.lineWidth = 1.1;
     for (const part of parts) {
-      ctx.fillRect(part.x * scale, part.y * scale, part.w * scale, part.h * scale);
+      ctx.fillRect(mx(part.x), my(part.y), part.w * scale, part.h * scale);
     }
     if (!panel.isCut) {
       if (parts.length === 1) {
         const p = parts[0];
-        ctx.strokeRect(p.x * scale, p.y * scale, p.w * scale, p.h * scale);
+        ctx.strokeRect(mx(p.x), my(p.y), p.w * scale, p.h * scale);
       } else {
-        strokeExternalEdges(ctx, parts, (x, y) => ({ x: x * scale, y: y * scale }));
+        strokeExternalEdges(ctx, parts, (x, y) => ({ x: mx(x), y: my(y) }));
       }
     }
-    ctx.setLineDash([]);
   }
 
   if (numbersOk) {
@@ -384,35 +407,58 @@ export function renderCeilingSchemeForPdf({
       ctx.font = `600 ${fontPx}px Arial, sans-serif`;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      ctx.fillText(String(panel.number), label.x * scale, label.y * scale);
+      ctx.fillText(String(panel.number), mx(label.x), my(label.y));
     }
   }
 
   if (showFrame && frameBounds) {
+    // frame-overlay expects untranslated local metres × scale; shift by expanded origin
+    ctx.save();
+    ctx.translate(-minX * scale, -minY * scale);
     drawFrameGrid(ctx, frameBounds, scale, {
       showHangers: scale >= 28,
       clipPolygon: local,
     });
+    ctx.restore();
   }
   ctx.restore(); // clip
-  ctx.restore(); // translate
 
-  // Outer room stroke again (crisp)
-  ctx.save();
-  ctx.translate(ox, oy);
-  ctx.beginPath();
-  ctx.moveTo(local[0].x * scale, local[0].y * scale);
-  for (let i = 1; i < local.length; i++) {
-    ctx.lineTo(local[i].x * scale, local[i].y * scale);
+  // Pass 3: dashed full-panel outlines for cuts (incl. overhang past the room edge)
+  for (const panel of panels) {
+    if (!panel.isCut) continue;
+    ctx.strokeStyle = PRINT.panelStroke;
+    ctx.lineWidth = 1.25;
+    ctx.setLineDash([5, 3]);
+    const parts = panelParts(panel);
+    if (isOverhangCut(panel) || parts.length === 1) {
+      ctx.strokeRect(mx(panel.x), my(panel.y), panel.width * scale, panel.height * scale);
+    } else {
+      strokeExternalEdges(ctx, parts, (x, y) => ({ x: mx(x), y: my(y) }));
+    }
+    ctx.setLineDash([]);
   }
-  ctx.closePath();
+
+  // Outer room stroke again (crisp, above hatch/dashes)
+  roomPath();
   ctx.strokeStyle = PRINT.panelStroke;
   ctx.lineWidth = 2.2;
   ctx.stroke();
-  ctx.restore();
+  ctx.restore(); // translate
 
-  drawDimH(ctx, ox, ox + rw * scale, 24, `${rw.toFixed(2)} м`);
-  drawDimV(ctx, oy, oy + rh * scale, 24, `${rh.toFixed(2)} м`);
+  drawDimH(
+    ctx,
+    ox + mx(roomB.minX),
+    ox + mx(roomB.maxX),
+    24,
+    `${roomW.toFixed(2)} м`
+  );
+  drawDimV(
+    ctx,
+    oy + my(roomB.minY),
+    oy + my(roomB.maxY),
+    24,
+    `${roomH.toFixed(2)} м`
+  );
 
   return toDataUrl(canvas);
 }
