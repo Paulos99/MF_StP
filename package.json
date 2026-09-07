@@ -7,7 +7,8 @@
     "dev": "vite",
     "build": "vite build",
     "build:esbuild": "node scripts/build-esbuild.mjs",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test:layout": "node scripts/assert-ceiling-layout.mjs"
   },
   "dependencies": {},
   "devDependencies": {

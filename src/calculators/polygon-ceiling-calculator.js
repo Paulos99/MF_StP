@@ -9,9 +9,6 @@ import {
   shoelaceArea,
 } from '../core/polygon-geometry.js';
 
-/** Макс. ширина/высота полосы у края bbox, ради которой не кладём целый слот (м) */
-const EDGE_BAND_MAX_M = 0.18;
-
 function isAxisAlignedDelta(dx, dy, eps = 1e-3) {
   return Math.abs(dx) <= eps || Math.abs(dy) <= eps;
 }
@@ -124,26 +121,8 @@ export class PolygonPanelCalculator {
     if (Math.min(clipBounds.w, clipBounds.h) <= MIN_PANEL_FRAGMENT + 1e-9) return null;
 
     const fullyInside = rectInsidePolygon(x, y, width, height, this.localVertices);
-
-    // Не покупаем целый слот ради узкой полосы у края bbox (≤18 см): её закрывают
-    // обрезками с подрезок по другой оси. Не трогаем диагональные клипы внутри bbox.
-    if (!fullyInside) {
-      const b = getBounds(this.localVertices);
-      const insideW = Math.max(0, Math.min(x + width, b.maxX) - Math.max(x, b.minX));
-      const insideH = Math.max(0, Math.min(y + height, b.maxY) - Math.max(y, b.minY));
-      const overhangsBBox =
-        x < b.minX - 1e-9 ||
-        y < b.minY - 1e-9 ||
-        x + width > b.maxX + 1e-9 ||
-        y + height > b.maxY + 1e-9;
-      if (overhangsBBox) {
-        const thinBBox =
-          insideW <= EDGE_BAND_MAX_M + 1e-9 || insideH <= EDGE_BAND_MAX_M + 1e-9;
-        const thinClip =
-          Math.min(clipBounds.w, clipBounds.h) <= EDGE_BAND_MAX_M + 1e-9;
-        if (thinBBox && thinClip) return null;
-      }
-    }
+    // Тонкий технологический зазор ≤ MIN_PANEL_FRAGMENT (5 см) уже отсечён выше.
+    // Полосы шире 5 см у края bbox закрываем целым слотом (шип-паз, без дыр).
 
     const cut = !!isCut || !fullyInside;
 
@@ -313,7 +292,9 @@ export class PolygonPanelCalculator {
 
     const restFrom = y0 + stripH;
     if (restFrom < b.maxY - MIN_PANEL_FRAGMENT + 1e-6) {
-      const ys = this._axisStopsAnchored(restFrom, b.maxY, this.panelWidth, ay);
+      // Фаза Y = restFrom: горизонтальные ряды стыкуются со вертикальной полосой
+      // без зазора (иначе якорь ay даёт сдвиг фазы и пустую полосу ~0.3 м).
+      const ys = this._axisStopsAnchored(restFrom, b.maxY, this.panelWidth, restFrom);
       const xs = this._axisStopsAnchored(0, b.maxX, this.panelLength, ax);
       for (const { start: y, size: rowHeight } of ys) {
         for (const { start: x, size: pw } of xs) {
@@ -482,22 +463,11 @@ export class PolygonPanelCalculator {
   }
 
   compareScores(a, b) {
+    // Сначала покрытие — схема с дырами (комбинированная со сдвигом фазы и т.п.)
+    // не должна выигрывать за счёт меньшего числа панелей при «достаточных» 94%.
+    // Технологический пропуск края — только ≤ MIN_PANEL_FRAGMENT (5 см).
     const covA = a.coverage ?? 0;
     const covB = b.coverage ?? 0;
-    // Достаточное покрытие (≥94%): предпочитаем меньше панелей — узкий технологический
-    // зазор у края закрывают обрезками, не целым рядом слотов.
-    const okA = covA >= 94;
-    const okB = covB >= 94;
-    if (okA && okB) {
-      if (a.total !== b.total) return a.total - b.total;
-      if (a.fullPanels !== b.fullPanels) return b.fullPanels - a.fullPanels;
-      if (a.flushCorners !== b.flushCorners) return b.flushCorners - a.flushCorners;
-      if (a.cornerCrumbs !== b.cornerCrumbs) return a.cornerCrumbs - b.cornerCrumbs;
-      if (a.cutPanels !== b.cutPanels) return a.cutPanels - b.cutPanels;
-      return 0;
-    }
-    if (okA !== okB) return okA ? -1 : 1;
-    // Ниже порога — сначала покрытие, иначе схема с дырами у диагонали выиграет по fullPanels
     if (Math.abs(covA - covB) > 0.5) return covB - covA;
     if (a.fullPanels !== b.fullPanels) return b.fullPanels - a.fullPanels;
     if (a.flushCorners !== b.flushCorners) return b.flushCorners - a.flushCorners;

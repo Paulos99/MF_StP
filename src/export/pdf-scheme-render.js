@@ -116,12 +116,13 @@ function visibleLabelMeta(panel) {
       y: panel.meta.labelY,
       vw: Math.min(panel.width, 0.4),
       vh: Math.min(panel.height, 0.4),
+      preferSlot: false,
     };
   } else {
     parts = panelParts(panel);
   }
   let best = parts[0];
-  let bestArea = best.w * best.h;
+  let bestArea = best ? best.w * best.h : 0;
   for (let i = 1; i < parts.length; i++) {
     const a = parts[i].w * parts[i].h;
     if (a > bestArea) {
@@ -129,12 +130,26 @@ function visibleLabelMeta(panel) {
       bestArea = a;
     }
   }
-  if (!best || bestArea < 1e-8) return null;
+  // Подрезки/overhang: если видимый клип крошечный — номер в центре полного слота
+  // (как на сайте для читаемых подрезок), иначе центр крупнейшего куска в комнате.
+  if (!best || bestArea < 1e-8) {
+    return {
+      x: panel.x + panel.width / 2,
+      y: panel.y + panel.height / 2,
+      vw: panel.width,
+      vh: panel.height,
+      preferSlot: true,
+    };
+  }
+  const insetX = Math.min(best.w * 0.2, 0.08);
+  const insetY = Math.min(best.h * 0.2, 0.08);
   return {
     x: best.x + best.w / 2,
     y: best.y + best.h / 2,
-    vw: best.w,
-    vh: best.h,
+    vw: Math.max(0.02, best.w - insetX * 2),
+    vh: Math.max(0.02, best.h - insetY * 2),
+    preferSlot: false,
+    clipArea: bestArea,
   };
 }
 
@@ -405,12 +420,26 @@ export function renderCeilingSchemeForPdf({
     }
   }
 
+  const deferredCutNumbers = [];
   if (numbersOk) {
     for (const panel of panels) {
-      const label = visibleLabelMeta(panel);
+      let label = visibleLabelMeta(panel);
       if (!label) continue;
-      const fontPx = Math.max(7, Math.min(12, label.vh * scale * 0.5, label.vw * scale * 0.4));
-      if (label.vw * scale < 10 || label.vh * scale < 9) continue;
+      // Пороги как на сайте (8×7 px); узкие подрезки — номер в центре полного слота
+      let fontPx = Math.max(7, Math.min(12, label.vh * scale * 0.55, label.vw * scale * 0.45));
+      const tooSmall = label.vw * scale < 8 || label.vh * scale < 7;
+      if (tooSmall) {
+        if (!panel.isCut) continue;
+        label = {
+          x: panel.x + panel.width / 2,
+          y: panel.y + panel.height / 2,
+          vw: panel.width,
+          vh: panel.height,
+        };
+        fontPx = Math.max(7, Math.min(11, Math.min(label.vh, label.vw) * scale * 0.35));
+        deferredCutNumbers.push({ panel, label, fontPx });
+        continue;
+      }
       ctx.fillStyle = PRINT.text;
       ctx.font = `600 ${fontPx}px Arial, sans-serif`;
       ctx.textAlign = 'center';
@@ -430,6 +459,21 @@ export function renderCeilingSchemeForPdf({
     ctx.restore();
   }
   ctx.restore(); // clip
+
+  // Номера подрезок в центре полного слота (видимы на hatch-fringe, вне room-clip)
+  if (deferredCutNumbers.length) {
+    for (const { panel, label, fontPx } of deferredCutNumbers) {
+      const view = clampToView(panel.x, panel.y, panel.width, panel.height);
+      if (!view) continue;
+      const lx = Math.min(Math.max(label.x, view.x), view.x + view.w);
+      const ly = Math.min(Math.max(label.y, view.y), view.y + view.h);
+      ctx.fillStyle = PRINT.text;
+      ctx.font = `600 ${fontPx}px Arial, sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(String(panel.number), mx(lx), my(ly));
+    }
+  }
 
   // Pass 3: dashed cut outlines, clamped to the same view fringe as the site
   for (const panel of panels) {
