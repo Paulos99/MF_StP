@@ -176,6 +176,7 @@ export class SketchEditor {
     this._bgDragging = false;
     this._bgDragStart = null;
     this._bgCalibrate = null; // null | { a: {x,y}|null, b: {x,y}|null }
+    this._bgScaleLocked = false;
     this.bgUploadInput = this._q('#sketchBgUploadInput');
     this.bgAdjustBtn = this._q('#sketchBgAdjustBtn');
     this.bgPanel = this._q('#sketchBgPanel');
@@ -188,6 +189,9 @@ export class SketchEditor {
     this.bgCalibLengthInput = this._q('#sketchBgCalibLength');
     this.bgCalibApplyBtn = this._q('#sketchBgCalibApply');
     this.bgCalibCancelBtn = this._q('#sketchBgCalibCancel');
+    this.bgScaleRow = this._q('#sketchBgScaleRow');
+    this.bgWidthRow = this._q('#sketchBgWidthRow');
+    this.bgLockedBadge = this._q('#sketchBgLockedBadge');
 
     this.keypad = new SketchKeypad(this._q('#sketchKeypadHost'), {
       onConfirm: (val) => this._onKeypadConfirm(val),
@@ -339,7 +343,10 @@ export class SketchEditor {
       this.render();
     });
     this.bgScaleInput?.addEventListener('input', () => {
-      if (!this.bgImage) return;
+      if (!this.bgImage || this._bgScaleLocked) {
+        this._syncBgScaleSlider();
+        return;
+      }
       const pct = parseInt(this.bgScaleInput.value, 10) || 100;
       this.bgTransform.widthM = this._bgBaseWidthM * (pct / 100);
       this._syncBgWidthInput();
@@ -388,8 +395,14 @@ export class SketchEditor {
           return;
         }
         if (this.bgAdjustMode && this.bgImage) {
+          if (!this._bgScaleLocked) {
+            this.showToast('Сначала откалибруйте масштаб по размеру стены');
+            if (!this._bgCalibrate) this._startBgCalibration();
+            e.preventDefault();
+            return;
+          }
           this._setBgAdjustMode(false);
-          this.showToast('Можно чертить контур поверх плана');
+          this.showToast('План зафиксирован — чертите контур');
           e.preventDefault();
           return;
         }
@@ -898,19 +911,11 @@ export class SketchEditor {
     const rect = this.canvas.getBoundingClientRect();
     const cx = e.clientX - rect.left;
     const cy = e.clientY - rect.top;
-    if (this.bgAdjustMode && this.bgImage && this._hitBackgroundImage(cx, cy)) {
-      e.preventDefault();
-      const factor = e.deltaY > 0 ? 0.95 : 1.05;
-      this.bgTransform.widthM = Math.max(0.5, Math.min(200, this.bgTransform.widthM * factor));
-      this._syncBgScaleSlider();
-      this._syncBgWidthInput();
-      this.render();
-      return;
-    }
+    // Колёсико всегда зумит камеру (вид), никогда не меняет масштаб подложки —
+    // иначе после калибровки «отдаление» случайно ломает размер комнаты.
     e.preventDefault();
     const factor = e.deltaY > 0 ? 0.92 : 1.08;
     if (this._zoomBeforeFine != null) {
-      // Пользовательский зум во время fine: обновляем базу, множитель сохраняем
       const wx = (cx - this.panX) / (PX_PER_M * this.zoom);
       const wy = (cy - this.panY) / (PX_PER_M * this.zoom);
       this._zoomBeforeFine = Math.max(
@@ -2265,7 +2270,9 @@ export class SketchEditor {
     }
     if (this.bgAdjustMode && this.bgImage && !this._bgCalibrate) {
       if (this.hintTextEl) {
-        this.hintTextEl.textContent = 'Перетащите подложку · колёсико — масштаб · «Готово — чертить»';
+        this.hintTextEl.textContent = this._bgScaleLocked
+          ? 'Сдвиньте план · колёсико — вид · «Зафиксировать и чертить»'
+          : 'Сначала калибровка по размеру стены';
       }
     } else if (this._bgCalibrate) {
       if (this.hintTextEl) {
@@ -2314,6 +2321,7 @@ export class SketchEditor {
         opacity: 0.45,
       };
       this._cancelBgCalibration(false);
+      this._bgScaleLocked = false;
       this.bgAdjustMode = true;
       if (this.bgOpacityInput) this.bgOpacityInput.value = '45';
       if (this.bgScaleInput) this.bgScaleInput.value = '100';
@@ -2321,7 +2329,7 @@ export class SketchEditor {
       this._updateBgUi();
       this._updateUi();
       this.render();
-      this.showToast('Подложка загружена — калибруйте масштаб или нажмите «Готово — чертить»');
+      this._startBgCalibration();
     };
     img.onerror = () => {
       URL.revokeObjectURL(url);
@@ -2337,6 +2345,7 @@ export class SketchEditor {
     this.bgAdjustMode = false;
     this._bgDragging = false;
     this._bgDragStart = null;
+    this._bgScaleLocked = false;
     this._cancelBgCalibration(false);
     if (updateUi) {
       this._updateBgUi();
@@ -2357,10 +2366,22 @@ export class SketchEditor {
   _toggleBgAdjustMode() {
     if (!this.bgImage) return;
     if (this._bgCalibrate) this._cancelBgCalibration(false);
-    this._setBgAdjustMode(!this.bgAdjustMode);
-    if (!this.bgAdjustMode) {
-      this.showToast('Можно чертить контур поверх плана');
+    if (this.bgAdjustMode) {
+      // Зафиксировать и чертить
+      if (!this._bgScaleLocked) {
+        this.showToast('Сначала откалибруйте масштаб по размеру стены');
+        this._startBgCalibration();
+        return;
+      }
+      this._setBgAdjustMode(false);
+      this.showToast('План зафиксирован — чертите контур');
+      return;
     }
+    // Снова только сдвиг (масштаб уже зафиксирован)
+    this._setBgAdjustMode(true);
+    this.showToast(this._bgScaleLocked
+      ? 'Только сдвиг плана — масштаб зафиксирован'
+      : 'Сдвиньте план · масштаб меняйте только калибровкой');
   }
 
   _syncBgScaleSlider() {
@@ -2376,6 +2397,11 @@ export class SketchEditor {
 
   _applyBgWidthInput() {
     if (!this.bgImage || !this.bgWidthInput) return;
+    if (this._bgScaleLocked) {
+      this._syncBgWidthInput();
+      this.showToast('Масштаб зафиксирован — перекалибруйте, чтобы изменить');
+      return;
+    }
     const raw = parseFloat(String(this.bgWidthInput.value).replace(',', '.'));
     if (!Number.isFinite(raw) || raw < 0.5) {
       this._syncBgWidthInput();
@@ -2390,6 +2416,8 @@ export class SketchEditor {
   _startBgCalibration() {
     if (!this.bgImage) return;
     this.bgAdjustMode = true;
+    // Перекалибровка снимает lock до успешного «Применить»
+    this._bgScaleLocked = false;
     this._bgCalibrate = { a: null, b: null };
     if (this.bgCalibRow) this.bgCalibRow.hidden = true;
     if (this.bgCalibLengthInput) this.bgCalibLengthInput.value = '';
@@ -2469,45 +2497,62 @@ export class SketchEditor {
     }
     const scale = realM / worldDist;
     this.bgTransform.widthM = Math.max(0.5, Math.min(200, this.bgTransform.widthM * scale));
+    // Новая база % слайдера = текущий калиброванный размер
+    this._bgBaseWidthM = this.bgTransform.widthM;
+    this._bgScaleLocked = true;
     this._syncBgScaleSlider();
     this._syncBgWidthInput();
     this._cancelBgCalibration(false);
-    this._setBgAdjustMode(false);
-    this.showToast('Масштаб подогнан — можно чертить контур');
+    // Остаёмся в adjust: можно сдвинуть план, масштаб уже lock
+    this.bgAdjustMode = true;
+    this._updateBgUi();
+    this._updateUi();
+    this.render();
+    this.showToast('Масштаб зафиксирован — сдвиньте план, затем «Зафиксировать и чертить»');
   }
 
   _updateBgUi() {
     const hasBg = !!this.bgImage;
     const calibrating = !!this._bgCalibrate;
+    const locked = this._bgScaleLocked;
     if (this.bgAdjustBtn) {
       this.bgAdjustBtn.hidden = !hasBg;
       this.bgAdjustBtn.classList.toggle('active', hasBg && this.bgAdjustMode && !calibrating);
       this.bgAdjustBtn.classList.toggle('sketch-bg-panel__toggle--done', hasBg && this.bgAdjustMode);
       if (!hasBg) {
-        this.bgAdjustBtn.textContent = 'Готово — чертить';
+        this.bgAdjustBtn.textContent = 'Зафиксировать и чертить';
       } else if (this.bgAdjustMode) {
-        this.bgAdjustBtn.textContent = 'Готово — чертить';
+        this.bgAdjustBtn.textContent = 'Зафиксировать и чертить';
       } else {
-        this.bgAdjustBtn.textContent = 'Сдвинуть / масштаб';
+        this.bgAdjustBtn.textContent = 'Сдвинуть план';
       }
     }
     if (this.bgCalibBtn) {
       this.bgCalibBtn.hidden = !hasBg;
       this.bgCalibBtn.classList.toggle('active', calibrating);
-      this.bgCalibBtn.textContent = calibrating ? 'Калибровка…' : 'Калибровать по размеру';
+      this.bgCalibBtn.textContent = calibrating
+        ? 'Калибровка…'
+        : (locked ? 'Перекалибровать' : 'Калибровать по размеру');
     }
     if (this.bgPanel) this.bgPanel.hidden = !hasBg;
+    if (this.bgLockedBadge) this.bgLockedBadge.hidden = !(hasBg && locked && !calibrating);
+    if (this.bgScaleRow) this.bgScaleRow.hidden = !hasBg || locked || calibrating;
+    if (this.bgWidthRow) this.bgWidthRow.hidden = !hasBg || locked || calibrating;
+    if (this.bgScaleInput) this.bgScaleInput.disabled = locked;
+    if (this.bgWidthInput) this.bgWidthInput.disabled = locked;
     if (this.bgHintEl && hasBg) {
       if (calibrating && !this._bgCalibrate.a) {
         this.bgHintEl.textContent = 'Кликните первый конец стены с известным размером на плане.';
       } else if (calibrating && this._bgCalibrate.a && !this._bgCalibrate.b) {
         this.bgHintEl.textContent = 'Кликните второй конец той же стены.';
       } else if (calibrating && this._bgCalibrate.a && this._bgCalibrate.b) {
-        this.bgHintEl.textContent = 'Введите длину отрезка: 4,8 или 4800 (мм). После «Применить» можно чертить.';
+        this.bgHintEl.textContent = 'Введите длину: 4,8 или 4800 (мм). Масштаб зафиксируется.';
+      } else if (this.bgAdjustMode && locked) {
+        this.bgHintEl.textContent = 'Масштаб зафиксирован. Перетащите план на место. Колёсико — только вид камеры. Затем «Зафиксировать и чертить».';
       } else if (this.bgAdjustMode) {
-        this.bgHintEl.textContent = 'Синяя рамка: перетаскивайте фото, колёсико — масштаб. Лучше «Калибровать по размеру». Затем «Готово — чертить».';
+        this.bgHintEl.textContent = 'Сначала «Калибровать по размеру». Колёсико не меняет размер плана — только вид.';
       } else {
-        this.bgHintEl.textContent = 'Чертите контур поверх плана. Чтобы сдвинуть фото — «Сдвинуть / масштаб».';
+        this.bgHintEl.textContent = 'Чертите контур. «Сдвинуть план» — только перемещение (масштаб не сбросится).';
       }
     }
     this.canvasWrap?.classList.toggle('sketch-canvas-wrap--bg-adjust', hasBg && this.bgAdjustMode && !calibrating);
