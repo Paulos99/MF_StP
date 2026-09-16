@@ -1,7 +1,7 @@
 import {
   DRAW_GRID_STEP,
   FINE_GRID_STEP,
-  FINE_ENTER_VEL,
+  METER_MAGNET_M,
   cloneVertices,
   createCutCornerVertices,
   createLShapeVertices,
@@ -45,6 +45,9 @@ const SNAP_PULSE_MS = 140;
 const LABEL_PULSE_MS = 160;
 const FINE_TICK_FADE_MS = 180;
 const FINE_TICK_RADIUS_M = 0.75;
+const FINE_ZOOM_FACTOR = 1.5;
+const FINE_ZOOM_IN_LERP = 0.11;
+const FINE_ZOOM_OUT_LERP = 0.28;
 const PANEL_SETTLE_MS = 2500;
 const PANEL_REVEAL_MS = 400;
 
@@ -128,7 +131,6 @@ export class SketchEditor {
     this._previewPoint = null;
     this._snapStep = DRAW_GRID_STEP;
     this._snapVelocity = 0;
-    this._snapDwellMs = 0;
     this._snapLastSample = null;
     this._snapPointerType = 'mouse';
     this._snapPulseUntil = 0;
@@ -137,6 +139,12 @@ export class SketchEditor {
     this._labelAnimValue = null;
     this._fineTicksAlpha = 0;
     this._previewTarget = null;
+    this._zoomBeforeFine = null;
+    this._fineZoomMul = 1;
+    this._fineZoomTarget = 1;
+    this._zoomAnchorWorld = null;
+    this._zoomAnimRaf = null;
+    this._zoomAnimFast = false;
     this._drawHistorySaved = false;
     this._renderRaf = null;
     this._fitScheduled = false;
@@ -853,6 +861,20 @@ export class SketchEditor {
     }
     e.preventDefault();
     const factor = e.deltaY > 0 ? 0.92 : 1.08;
+    if (this._zoomBeforeFine != null) {
+      // Пользовательский зум во время fine: обновляем базу, множитель сохраняем
+      const wx = (cx - this.panX) / (PX_PER_M * this.zoom);
+      const wy = (cy - this.panY) / (PX_PER_M * this.zoom);
+      this._zoomBeforeFine = Math.max(
+        MIN_ZOOM / FINE_ZOOM_FACTOR,
+        Math.min(MAX_ZOOM / FINE_ZOOM_FACTOR, this._zoomBeforeFine * factor)
+      );
+      this.zoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, this._zoomBeforeFine * this._fineZoomMul));
+      this.panX = cx - wx * PX_PER_M * this.zoom;
+      this.panY = cy - wy * PX_PER_M * this.zoom;
+      this.render();
+      return;
+    }
     this._zoomAt(cx, cy, factor);
   }
 
@@ -866,6 +888,13 @@ export class SketchEditor {
   }
 
   fitToScreen() {
+    if (this._zoomAnimRaf) {
+      cancelAnimationFrame(this._zoomAnimRaf);
+      this._zoomAnimRaf = null;
+    }
+    this._zoomBeforeFine = null;
+    this._fineZoomMul = 1;
+    this._fineZoomTarget = 1;
     const { w, h } = this._getCanvasSize();
     const b = getBounds(this.vertices.length ? this.vertices : [{ x: 0, y: 0 }, { x: 8, y: 6 }]);
     const pad = 1.2;
@@ -1409,12 +1438,17 @@ export class SketchEditor {
 
     if (!this.closed) {
       const w = this.canvasToWorld(cx, cy);
-      const snapped = snapPointDraw(
-        w.x,
-        w.y,
-        this.vertices[this.vertices.length - 1],
-        this._snapStep || DRAW_GRID_STEP
-      );
+      const from = this.vertices[this.vertices.length - 1] ?? null;
+      const step = resolveAdaptiveDrawStep({
+        x: w.x,
+        y: w.y,
+        fromPoint: from,
+        velocity: this._snapVelocity,
+        magnetM: METER_MAGNET_M,
+        currentStep: this._snapStep,
+      });
+      this._snapStep = step;
+      const snapped = snapPointDraw(w.x, w.y, from, step);
       if (this._isTooCloseToExisting(snapped.x, snapped.y)) return;
       if (!this._drawHistorySaved) {
         this._pushHistory();
@@ -1422,6 +1456,9 @@ export class SketchEditor {
       }
       this.vertices.push({ x: snapped.x, y: snapped.y, label: labelForIndex(this.vertices.length) });
       this._previewPoint = null;
+      this._previewSmooth = null;
+      this._previewTarget = null;
+      this._exitFineZoomAfterPlace(snapped);
       this.render();
     }
   }
@@ -1465,7 +1502,10 @@ export class SketchEditor {
 
     const w = this.canvasToWorld(cx, cy);
     const isTouch = e.pointerType === 'touch' || this._isCoarsePointer();
-    this._updateAdaptiveSnap(w.x, w.y, isTouch);
+    const from = (!this.closed && this.vertices.length > 0)
+      ? this.vertices[this.vertices.length - 1]
+      : null;
+    this._updateAdaptiveSnap(w.x, w.y, { isTouch, fromPoint: from, anchorCanvas: { cx, cy } });
     const step = this._snapStep;
 
     if (this._dragIdx !== null && this.closed) {
@@ -1478,7 +1518,7 @@ export class SketchEditor {
     }
 
     if (!this.closed && this.vertices.length > 0) {
-      const snapped = snapPointDraw(w.x, w.y, this.vertices[this.vertices.length - 1], step);
+      const snapped = snapPointDraw(w.x, w.y, from, step);
       if (!this._previewSmooth) this._previewSmooth = { ...snapped };
       this._previewSmooth.x += (snapped.x - this._previewSmooth.x) * PREVIEW_LERP;
       this._previewSmooth.y += (snapped.y - this._previewSmooth.y) * PREVIEW_LERP;
@@ -1516,7 +1556,7 @@ export class SketchEditor {
     }
   }
 
-  _updateAdaptiveSnap(worldX, worldY, isTouch) {
+  _updateAdaptiveSnap(worldX, worldY, { isTouch = false, fromPoint = null, anchorCanvas = null } = {}) {
     const now = performance.now();
     this._snapPointerType = isTouch ? 'touch' : 'mouse';
     const prev = this._snapLastSample;
@@ -1524,31 +1564,107 @@ export class SketchEditor {
       const dt = (now - prev.t) / 1000;
       const dist = Math.hypot(worldX - prev.x, worldY - prev.y);
       const instant = dist / Math.max(dt, 1e-4);
-      this._snapVelocity = this._snapVelocity * 0.55 + instant * 0.45;
-      const enterVel = isTouch ? FINE_ENTER_VEL * 0.7 : FINE_ENTER_VEL;
-      if (this._snapVelocity < enterVel) {
-        this._snapDwellMs += now - prev.t;
-      } else {
-        this._snapDwellMs = 0;
-      }
+      this._snapVelocity = this._snapVelocity * 0.5 + instant * 0.5;
     } else {
       this._snapVelocity = 0;
-      this._snapDwellMs = 0;
     }
     this._snapLastSample = { x: worldX, y: worldY, t: now };
 
+    const magnet = isTouch ? METER_MAGNET_M * 1.25 : METER_MAGNET_M;
     const next = resolveAdaptiveDrawStep({
+      x: worldX,
+      y: worldY,
+      fromPoint,
       velocity: this._snapVelocity,
-      dwellMs: this._snapDwellMs,
+      magnetM: magnet,
       currentStep: this._snapStep,
-      isTouch,
     });
+
     if (next !== this._snapStep) {
       this._snapStep = next;
       this._snapPulseFrom = next <= FINE_GRID_STEP ? 1.35 : 0.75;
       this._snapPulseUntil = now + SNAP_PULSE_MS;
       this._updateSnapLegend();
     }
+
+    const fine = next <= FINE_GRID_STEP;
+    if (fine) {
+      this._enterFineZoom({ x: worldX, y: worldY }, anchorCanvas);
+    } else if (this._fineZoomTarget > 1.01 || this._fineZoomMul > 1.01) {
+      this._leaveFineZoom(false);
+    }
+  }
+
+  _setZoomAroundWorld(anchorWorld, newZoom) {
+    if (!anchorWorld) {
+      this.zoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, newZoom));
+      return;
+    }
+    const before = this.worldToCanvas(anchorWorld.x, anchorWorld.y);
+    this.zoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, newZoom));
+    const after = this.worldToCanvas(anchorWorld.x, anchorWorld.y);
+    this.panX += before.x - after.x;
+    this.panY += before.y - after.y;
+  }
+
+  _enterFineZoom(anchorWorld, anchorCanvas) {
+    if (this._zoomBeforeFine == null) {
+      const mul = Math.max(this._fineZoomMul, 1);
+      this._zoomBeforeFine = this.zoom / mul;
+      this._fineZoomMul = this.zoom / this._zoomBeforeFine;
+      if (anchorWorld) this._zoomAnchorWorld = { ...anchorWorld };
+      else if (anchorCanvas) {
+        this._zoomAnchorWorld = this.canvasToWorld(anchorCanvas.cx, anchorCanvas.cy);
+      }
+    }
+    this._fineZoomTarget = FINE_ZOOM_FACTOR;
+    this._zoomAnimFast = false;
+    this._ensureFineZoomAnim();
+  }
+
+  _leaveFineZoom(fast) {
+    this._fineZoomTarget = 1;
+    this._zoomAnimFast = !!fast;
+    this._ensureFineZoomAnim();
+  }
+
+  _exitFineZoomAfterPlace(anchorWorld) {
+    this._snapStep = DRAW_GRID_STEP;
+    this._snapLastSample = null;
+    this._snapVelocity = 0;
+    this._fineTicksAlpha = 0;
+    if (anchorWorld) this._zoomAnchorWorld = { ...anchorWorld };
+    this._updateSnapLegend();
+    this._leaveFineZoom(true);
+  }
+
+  _ensureFineZoomAnim() {
+    if (this._zoomAnimRaf) return;
+    const tick = () => {
+      this._zoomAnimRaf = null;
+      if (this._zoomBeforeFine == null) {
+        this._fineZoomMul = 1;
+        this._fineZoomTarget = 1;
+        return;
+      }
+      const lerp = this._zoomAnimFast ? FINE_ZOOM_OUT_LERP : FINE_ZOOM_IN_LERP;
+      const prev = this._fineZoomMul;
+      const next = prev + (this._fineZoomTarget - prev) * lerp;
+      const done = Math.abs(next - this._fineZoomTarget) < 0.004;
+      this._fineZoomMul = done ? this._fineZoomTarget : next;
+      const targetZoom = this._zoomBeforeFine * this._fineZoomMul;
+      this._setZoomAroundWorld(this._zoomAnchorWorld, targetZoom);
+      this._scheduleRender();
+      if (!done) {
+        this._zoomAnimRaf = requestAnimationFrame(tick);
+      } else if (this._fineZoomTarget <= 1.001) {
+        this.zoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, this._zoomBeforeFine));
+        this._zoomBeforeFine = null;
+        this._fineZoomMul = 1;
+        this._zoomAnimFast = false;
+      }
+    };
+    this._zoomAnimRaf = requestAnimationFrame(tick);
   }
 
   _notePreviewLength(snapped) {
@@ -1609,10 +1725,21 @@ export class SketchEditor {
   _resetAdaptiveSnap() {
     this._snapStep = DRAW_GRID_STEP;
     this._snapVelocity = 0;
-    this._snapDwellMs = 0;
     this._snapLastSample = null;
     this._fineTicksAlpha = 0;
     this._previewTarget = null;
+    if (this._zoomAnimRaf) {
+      cancelAnimationFrame(this._zoomAnimRaf);
+      this._zoomAnimRaf = null;
+    }
+    if (this._zoomBeforeFine != null) {
+      this.zoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, this._zoomBeforeFine));
+      this._zoomBeforeFine = null;
+    }
+    this._fineZoomMul = 1;
+    this._fineZoomTarget = 1;
+    this._zoomAnchorWorld = null;
+    this._zoomAnimFast = false;
     this._updateSnapLegend();
   }
 
@@ -1637,11 +1764,15 @@ export class SketchEditor {
       this._syncRoomFromShape();
       this._beginPanelSettle();
     }
-    if (!this.closed) {
-      // keep fine mode while drawing; only decay velocity sample gap
-      this._snapLastSample = null;
-    } else {
-      this._resetAdaptiveSnap();
+    this._snapLastSample = null;
+    this._snapVelocity = 0;
+    if (this.closed) {
+      this._snapStep = DRAW_GRID_STEP;
+      this._fineTicksAlpha = 0;
+      this._updateSnapLegend();
+      if (this._fineZoomMul > 1.01 || this._fineZoomTarget > 1.01) {
+        this._leaveFineZoom(true);
+      }
     }
     this.render();
     this._updateUi();
@@ -1976,8 +2107,8 @@ export class SketchEditor {
     const touchUi = this._isCoarsePointer() || window.matchMedia?.('(max-width: 899px)')?.matches;
     const fine = this._snapStep <= FINE_GRID_STEP;
     let hintText = touchUi
-      ? (fine ? 'Медленно — шаг 5 см' : 'Тап — точка, сдвиг — панорама · шаг 1 м')
-      : (fine ? 'Замедлите курсор — шаг 5 см' : 'Кликайте по сетке — шаг 1 м · замедление — 5 см');
+      ? (fine ? 'Шаг 5 см · зум увеличен' : 'Тап — точка · между клетками — 5 см')
+      : (fine ? 'Шаг 5 см · зум +50%' : 'Шаг 1 м у линий сетки · между клетками — сразу 5 см');
 
     if (this.closed && this.vertices.length >= 3) {
       const area = shoelaceArea(this.vertices);

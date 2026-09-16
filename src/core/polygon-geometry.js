@@ -2,10 +2,11 @@ import { roundMeters } from './geometry.js';
 
 export const GRID_STEP = 0.1; // 10 cm — точные размеры
 export const DRAW_GRID_STEP = 1.0; // 1 м — построение формы в редакторе
-export const FINE_GRID_STEP = 0.05; // 5 см — точная привязка при замедлении
-export const FINE_ENTER_VEL = 0.35; // м/с — вход в fine
-export const FINE_EXIT_VEL = 0.9; // м/с — выход из fine
-export const FINE_DWELL_MS = 100; // удержание низкой скорости перед fine
+export const FINE_GRID_STEP = 0.05; // 5 см — точная привязка между клетками
+/** Узкая зона «магнита» к целому метру (м); вне неё сразу шаг 5 см */
+export const METER_MAGNET_M = 0.08;
+/** При очень быстром движении не входим в fine (м/с), чтобы не дёргать зум */
+export const FINE_SWEEP_VEL = 2.5;
 export const VERTEX_LABELS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
 
 export function labelForIndex(i) {
@@ -212,28 +213,47 @@ export function snapPointEdit(x, y, step = DRAW_GRID_STEP) {
 }
 
 /**
- * Adaptive draw/edit snap step: coarse 1 m while moving fast,
- * fine 5 cm after dwelling at low velocity (with hysteresis).
- * @param {{ velocity: number, dwellMs: number, currentStep: number, isTouch?: boolean }} opts
+ * Adaptive snap: between meter cells → 5 cm immediately;
+ * near a whole-meter line (narrow magnet) → 1 m.
+ * Hysteresis via currentStep keeps fine stable near the magnet edge.
+ * Optional sweep velocity keeps coarse while flying across the canvas.
+ * @param {{ x: number, y: number, fromPoint?: {x:number,y:number}|null, velocity?: number, magnetM?: number, currentStep?: number }} opts
  * @returns {number} DRAW_GRID_STEP | FINE_GRID_STEP
  */
 export function resolveAdaptiveDrawStep({
-  velocity = Infinity,
-  dwellMs = 0,
+  x = 0,
+  y = 0,
+  fromPoint = null,
+  velocity = 0,
+  magnetM = METER_MAGNET_M,
   currentStep = DRAW_GRID_STEP,
-  isTouch = false,
 } = {}) {
-  const enterVel = isTouch ? FINE_ENTER_VEL * 0.7 : FINE_ENTER_VEL;
-  const exitVel = isTouch ? FINE_EXIT_VEL * 0.85 : FINE_EXIT_VEL;
-  const inFine = currentStep <= FINE_GRID_STEP + 1e-9;
+  if (velocity > FINE_SWEEP_VEL) return DRAW_GRID_STEP;
 
-  if (inFine) {
-    if (velocity > exitVel) return DRAW_GRID_STEP;
-    return FINE_GRID_STEP;
+  const distToMeter = (v) => Math.abs(v - Math.round(v));
+  const inFine = currentStep <= FINE_GRID_STEP + 1e-9;
+  // Уже в fine — возвращаемся к 1 м только ближе к линии метра
+  const threshold = inFine ? magnetM * 0.55 : magnetM;
+
+  let checkX = true;
+  let checkY = true;
+  if (fromPoint) {
+    const dx = Math.abs(x - fromPoint.x);
+    const dy = Math.abs(y - fromPoint.y);
+    if (dx > dy * 1.15) checkY = false;
+    else if (dy > dx * 1.15) checkX = false;
   }
 
-  if (velocity < enterVel && dwellMs >= FINE_DWELL_MS) return FINE_GRID_STEP;
-  return DRAW_GRID_STEP;
+  let nearMeter = false;
+  if (checkX && checkY) {
+    nearMeter = distToMeter(x) <= threshold && distToMeter(y) <= threshold;
+  } else if (checkX) {
+    nearMeter = distToMeter(x) <= threshold;
+  } else {
+    nearMeter = distToMeter(y) <= threshold;
+  }
+
+  return nearMeter ? DRAW_GRID_STEP : FINE_GRID_STEP;
 }
 
 export function pointInPolygon(x, y, vertices) {
