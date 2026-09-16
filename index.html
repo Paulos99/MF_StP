@@ -300,16 +300,35 @@
                       </div>
                       <div id="sketchBgPanel" class="sketch-bg-panel" hidden>
                         <div class="sketch-bg-panel__title">Фото плана — подгоните под масштаб</div>
-                        <p class="sketch-bg-panel__hint">Ползунок «Размер» масштабирует фото под сетку (1 клетка = 1 м). Затем «Настроить положение».</p>
+                        <p class="sketch-bg-panel__hint" id="sketchBgHint">
+                          Отметьте два конца стены с известным размером (напр. 4,8 м) — масштаб подстроится под сетку (1 клетка = 1 м). Затем «Готово — чертить».
+                        </p>
                         <label class="sketch-bg-panel__row">
                           <span>Прозрачность</span>
                           <input type="range" id="sketchBgOpacity" min="10" max="90" value="45">
                         </label>
                         <label class="sketch-bg-panel__row">
-                          <span>Размер (масштаб)</span>
-                          <input type="range" id="sketchBgScale" min="10" max="200" value="100">
+                          <span>Размер</span>
+                          <input type="range" id="sketchBgScale" min="10" max="400" value="100">
                         </label>
-                        <button type="button" class="sketch-bg-panel__toggle" id="sketchBgAdjustBtn">Настроить положение</button>
+                        <label class="sketch-bg-panel__row">
+                          <span>Ширина, м</span>
+                          <input type="number" id="sketchBgWidthM" class="sketch-bg-panel__width" min="0.5" max="200" step="0.05" value="10">
+                        </label>
+                        <div class="sketch-bg-panel__actions">
+                          <button type="button" class="sketch-bg-panel__calib" id="sketchBgCalibBtn">Калибровать по размеру</button>
+                          <button type="button" class="sketch-bg-panel__toggle" id="sketchBgAdjustBtn">Готово — чертить</button>
+                        </div>
+                        <div id="sketchBgCalibRow" class="sketch-bg-panel__calib-row" hidden>
+                          <label class="sketch-bg-panel__row">
+                            <span>Длина</span>
+                            <input type="text" id="sketchBgCalibLength" class="sketch-bg-panel__width" placeholder="4,8 или 4800" inputmode="decimal">
+                          </label>
+                          <div class="sketch-bg-panel__actions">
+                            <button type="button" class="sketch-bg-panel__calib-apply" id="sketchBgCalibApply">Применить</button>
+                            <button type="button" class="sketch-bg-panel__calib-cancel" id="sketchBgCalibCancel">Отмена</button>
+                          </div>
+                        </div>
                         <button type="button" class="sketch-bg-panel__remove" id="sketchBgRemoveBtn">Удалить</button>
                       </div>
                       <div id="sketchEmptyHint" class="sketch-empty-hint" hidden>

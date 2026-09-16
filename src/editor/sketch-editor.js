@@ -175,11 +175,19 @@ export class SketchEditor {
     this.bgAdjustMode = false;
     this._bgDragging = false;
     this._bgDragStart = null;
+    this._bgCalibrate = null; // null | { a: {x,y}|null, b: {x,y}|null }
     this.bgUploadInput = this._q('#sketchBgUploadInput');
     this.bgAdjustBtn = this._q('#sketchBgAdjustBtn');
     this.bgPanel = this._q('#sketchBgPanel');
     this.bgOpacityInput = this._q('#sketchBgOpacity');
     this.bgScaleInput = this._q('#sketchBgScale');
+    this.bgWidthInput = this._q('#sketchBgWidthM');
+    this.bgHintEl = this._q('#sketchBgHint');
+    this.bgCalibBtn = this._q('#sketchBgCalibBtn');
+    this.bgCalibRow = this._q('#sketchBgCalibRow');
+    this.bgCalibLengthInput = this._q('#sketchBgCalibLength');
+    this.bgCalibApplyBtn = this._q('#sketchBgCalibApply');
+    this.bgCalibCancelBtn = this._q('#sketchBgCalibCancel');
 
     this.keypad = new SketchKeypad(this._q('#sketchKeypadHost'), {
       onConfirm: (val) => this._onKeypadConfirm(val),
@@ -316,6 +324,15 @@ export class SketchEditor {
       e.target.value = '';
     });
     this.bgAdjustBtn?.addEventListener('click', () => this._toggleBgAdjustMode());
+    this.bgCalibBtn?.addEventListener('click', () => this._startBgCalibration());
+    this.bgCalibApplyBtn?.addEventListener('click', () => this._applyBgCalibrationLength());
+    this.bgCalibCancelBtn?.addEventListener('click', () => this._cancelBgCalibration());
+    this.bgCalibLengthInput?.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        this._applyBgCalibrationLength();
+      }
+    });
     this.bgOpacityInput?.addEventListener('input', () => {
       if (!this.bgImage) return;
       this.bgTransform.opacity = (parseInt(this.bgOpacityInput.value, 10) || 45) / 100;
@@ -325,7 +342,15 @@ export class SketchEditor {
       if (!this.bgImage) return;
       const pct = parseInt(this.bgScaleInput.value, 10) || 100;
       this.bgTransform.widthM = this._bgBaseWidthM * (pct / 100);
+      this._syncBgWidthInput();
       this.render();
+    });
+    this.bgWidthInput?.addEventListener('change', () => this._applyBgWidthInput());
+    this.bgWidthInput?.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        this._applyBgWidthInput();
+      }
     });
     this._q('#sketchBgRemoveBtn')?.addEventListener('click', () => this._removeBackgroundImage());
 
@@ -356,15 +381,28 @@ export class SketchEditor {
 
     window.addEventListener('keydown', (e) => {
       if (!this._isInteractive()) return;
-      if (e.key === 'Escape' && this.host?.classList.contains('is-fullscreen')) {
-        if (this.isMobileStep()) {
-          this.setMobileSketchStep(false);
-          this.onMobileStepDone?.({ saved: false });
-        } else {
-          this.setFullscreen(false);
+      if (e.key === 'Escape') {
+        if (this._bgCalibrate) {
+          this._cancelBgCalibration();
+          e.preventDefault();
+          return;
         }
-        e.preventDefault();
-        return;
+        if (this.bgAdjustMode && this.bgImage) {
+          this._setBgAdjustMode(false);
+          this.showToast('Можно чертить контур поверх плана');
+          e.preventDefault();
+          return;
+        }
+        if (this.host?.classList.contains('is-fullscreen')) {
+          if (this.isMobileStep()) {
+            this.setMobileSketchStep(false);
+            this.onMobileStepDone?.({ saved: false });
+          } else {
+            this.setFullscreen(false);
+          }
+          e.preventDefault();
+          return;
+        }
       }
       if (e.code === 'Space' && !this._spaceDown) {
         this._spaceDown = true;
@@ -863,8 +901,9 @@ export class SketchEditor {
     if (this.bgAdjustMode && this.bgImage && this._hitBackgroundImage(cx, cy)) {
       e.preventDefault();
       const factor = e.deltaY > 0 ? 0.95 : 1.05;
-      this.bgTransform.widthM = Math.max(0.5, Math.min(80, this.bgTransform.widthM * factor));
+      this.bgTransform.widthM = Math.max(0.5, Math.min(200, this.bgTransform.widthM * factor));
       this._syncBgScaleSlider();
+      this._syncBgWidthInput();
       this.render();
       return;
     }
@@ -1343,6 +1382,12 @@ export class SketchEditor {
       return;
     }
     if (e.button !== undefined && e.button !== 0) return;
+
+    if (this._bgCalibrate) {
+      const w = this.canvasToWorld(cx, cy);
+      this._onBgCalibrateClick(w.x, w.y);
+      return;
+    }
 
     if (this.bgAdjustMode && this.bgImage && this._hitBackgroundImage(cx, cy)) {
       this._bgDragging = true;
@@ -2218,9 +2263,15 @@ export class SketchEditor {
     if (this.emptyHintEl) {
       this.emptyHintEl.hidden = !(!this.vertices.length && !this.bgImage);
     }
-    if (this.bgAdjustMode && this.bgImage) {
+    if (this.bgAdjustMode && this.bgImage && !this._bgCalibrate) {
       if (this.hintTextEl) {
-        this.hintTextEl.textContent = 'Перетащите подложку · колёсико — масштаб · затем рисуйте контур';
+        this.hintTextEl.textContent = 'Перетащите подложку · колёсико — масштаб · «Готово — чертить»';
+      }
+    } else if (this._bgCalibrate) {
+      if (this.hintTextEl) {
+        if (!this._bgCalibrate.a) this.hintTextEl.textContent = 'Калибровка: кликните первый конец стены';
+        else if (!this._bgCalibrate.b) this.hintTextEl.textContent = 'Калибровка: кликните второй конец стены';
+        else this.hintTextEl.textContent = 'Введите длину отрезка в панели слева';
       }
     }
 
@@ -2262,12 +2313,15 @@ export class SketchEditor {
         widthM: this._bgBaseWidthM,
         opacity: 0.45,
       };
+      this._cancelBgCalibration(false);
       this.bgAdjustMode = true;
       if (this.bgOpacityInput) this.bgOpacityInput.value = '45';
       if (this.bgScaleInput) this.bgScaleInput.value = '100';
+      this._syncBgWidthInput();
       this._updateBgUi();
+      this._updateUi();
       this.render();
-      this.showToast('Подложка загружена — настройте положение и масштаб');
+      this.showToast('Подложка загружена — калибруйте масштаб или нажмите «Готово — чертить»');
     };
     img.onerror = () => {
       URL.revokeObjectURL(url);
@@ -2283,34 +2337,185 @@ export class SketchEditor {
     this.bgAdjustMode = false;
     this._bgDragging = false;
     this._bgDragStart = null;
+    this._cancelBgCalibration(false);
     if (updateUi) {
       this._updateBgUi();
+      this._updateUi();
       this.render();
     }
   }
 
-  _toggleBgAdjustMode() {
-    if (!this.bgImage) return;
-    this.bgAdjustMode = !this.bgAdjustMode;
+  _setBgAdjustMode(on) {
+    if (!this.bgImage && on) return;
+    this.bgAdjustMode = !!on;
+    if (!this.bgAdjustMode) this._bgDragging = false;
     this._updateBgUi();
     this._updateUi();
     this.render();
   }
 
+  _toggleBgAdjustMode() {
+    if (!this.bgImage) return;
+    if (this._bgCalibrate) this._cancelBgCalibration(false);
+    this._setBgAdjustMode(!this.bgAdjustMode);
+    if (!this.bgAdjustMode) {
+      this.showToast('Можно чертить контур поверх плана');
+    }
+  }
+
   _syncBgScaleSlider() {
     if (!this.bgScaleInput || !this._bgBaseWidthM) return;
     const pct = Math.round((this.bgTransform.widthM / this._bgBaseWidthM) * 100);
-    this.bgScaleInput.value = String(Math.max(10, Math.min(200, pct)));
+    this.bgScaleInput.value = String(Math.max(10, Math.min(400, pct)));
+  }
+
+  _syncBgWidthInput() {
+    if (!this.bgWidthInput) return;
+    this.bgWidthInput.value = String(Math.round(this.bgTransform.widthM * 100) / 100);
+  }
+
+  _applyBgWidthInput() {
+    if (!this.bgImage || !this.bgWidthInput) return;
+    const raw = parseFloat(String(this.bgWidthInput.value).replace(',', '.'));
+    if (!Number.isFinite(raw) || raw < 0.5) {
+      this._syncBgWidthInput();
+      return;
+    }
+    this.bgTransform.widthM = Math.min(200, raw);
+    this._syncBgScaleSlider();
+    this._syncBgWidthInput();
+    this.render();
+  }
+
+  _startBgCalibration() {
+    if (!this.bgImage) return;
+    this.bgAdjustMode = true;
+    this._bgCalibrate = { a: null, b: null };
+    if (this.bgCalibRow) this.bgCalibRow.hidden = true;
+    if (this.bgCalibLengthInput) this.bgCalibLengthInput.value = '';
+    this._updateBgUi();
+    this._updateUi();
+    this.render();
+    this.showToast('Кликните первый конец стены с известным размером');
+  }
+
+  _cancelBgCalibration(update = true) {
+    this._bgCalibrate = null;
+    if (this.bgCalibRow) this.bgCalibRow.hidden = true;
+    if (this.bgCalibLengthInput) this.bgCalibLengthInput.value = '';
+    if (update) {
+      this._updateBgUi();
+      this._updateUi();
+      this.render();
+    }
+  }
+
+  _onBgCalibrateClick(x, y) {
+    if (!this._bgCalibrate) return;
+    if (!this._bgCalibrate.a) {
+      this._bgCalibrate.a = { x, y };
+      this.showToast('Кликните второй конец стены');
+      this._updateBgUi();
+      this.render();
+      return;
+    }
+    if (!this._bgCalibrate.b) {
+      this._bgCalibrate.b = { x, y };
+      const dist = Math.hypot(
+        this._bgCalibrate.b.x - this._bgCalibrate.a.x,
+        this._bgCalibrate.b.y - this._bgCalibrate.a.y
+      );
+      if (dist < 0.05) {
+        this._bgCalibrate.b = null;
+        this.showToast('Точки слишком близко — укажите длиннее отрезок');
+        this.render();
+        return;
+      }
+      if (this.bgCalibRow) this.bgCalibRow.hidden = false;
+      if (this.bgCalibLengthInput) {
+        this.bgCalibLengthInput.focus();
+        this.bgCalibLengthInput.select?.();
+      }
+      this._updateBgUi();
+      this.render();
+      this.showToast('Введите реальную длину отрезка (м или мм)');
+    }
+  }
+
+  /** Parse "4.8" / "4,8" / "4800" → meters (values ≥ 100 treated as mm). */
+  _parseCalibLengthToMeters(raw) {
+    if (raw == null) return null;
+    const cleaned = String(raw).trim().replace(/\s/g, '').replace(',', '.');
+    const num = parseFloat(cleaned);
+    if (!Number.isFinite(num) || num <= 0) return null;
+    if (num >= 100) return num / 1000;
+    return num;
+  }
+
+  _applyBgCalibrationLength() {
+    if (!this.bgImage || !this._bgCalibrate?.a || !this._bgCalibrate?.b) return;
+    const realM = this._parseCalibLengthToMeters(this.bgCalibLengthInput?.value);
+    if (!realM || realM < 0.05) {
+      this.showToast('Укажите длину, например 4,8 или 4800');
+      this.bgCalibLengthInput?.focus();
+      return;
+    }
+    const a = this._bgCalibrate.a;
+    const b = this._bgCalibrate.b;
+    const worldDist = Math.hypot(b.x - a.x, b.y - a.y);
+    if (worldDist < 0.05) {
+      this.showToast('Слишком короткий отрезок');
+      return;
+    }
+    const scale = realM / worldDist;
+    this.bgTransform.widthM = Math.max(0.5, Math.min(200, this.bgTransform.widthM * scale));
+    this._syncBgScaleSlider();
+    this._syncBgWidthInput();
+    this._cancelBgCalibration(false);
+    this._setBgAdjustMode(false);
+    this.showToast('Масштаб подогнан — можно чертить контур');
   }
 
   _updateBgUi() {
     const hasBg = !!this.bgImage;
+    const calibrating = !!this._bgCalibrate;
     if (this.bgAdjustBtn) {
       this.bgAdjustBtn.hidden = !hasBg;
-      this.bgAdjustBtn.classList.toggle('active', hasBg && this.bgAdjustMode);
+      this.bgAdjustBtn.classList.toggle('active', hasBg && this.bgAdjustMode && !calibrating);
+      this.bgAdjustBtn.classList.toggle('sketch-bg-panel__toggle--done', hasBg && this.bgAdjustMode);
+      if (!hasBg) {
+        this.bgAdjustBtn.textContent = 'Готово — чертить';
+      } else if (this.bgAdjustMode) {
+        this.bgAdjustBtn.textContent = 'Готово — чертить';
+      } else {
+        this.bgAdjustBtn.textContent = 'Сдвинуть / масштаб';
+      }
+    }
+    if (this.bgCalibBtn) {
+      this.bgCalibBtn.hidden = !hasBg;
+      this.bgCalibBtn.classList.toggle('active', calibrating);
+      this.bgCalibBtn.textContent = calibrating ? 'Калибровка…' : 'Калибровать по размеру';
     }
     if (this.bgPanel) this.bgPanel.hidden = !hasBg;
-    this.canvasWrap?.classList.toggle('sketch-canvas-wrap--bg-adjust', hasBg && this.bgAdjustMode);
+    if (this.bgHintEl && hasBg) {
+      if (calibrating && !this._bgCalibrate.a) {
+        this.bgHintEl.textContent = 'Кликните первый конец стены с известным размером на плане.';
+      } else if (calibrating && this._bgCalibrate.a && !this._bgCalibrate.b) {
+        this.bgHintEl.textContent = 'Кликните второй конец той же стены.';
+      } else if (calibrating && this._bgCalibrate.a && this._bgCalibrate.b) {
+        this.bgHintEl.textContent = 'Введите длину отрезка: 4,8 или 4800 (мм). После «Применить» можно чертить.';
+      } else if (this.bgAdjustMode) {
+        this.bgHintEl.textContent = 'Синяя рамка: перетаскивайте фото, колёсико — масштаб. Лучше «Калибровать по размеру». Затем «Готово — чертить».';
+      } else {
+        this.bgHintEl.textContent = 'Чертите контур поверх плана. Чтобы сдвинуть фото — «Сдвинуть / масштаб».';
+      }
+    }
+    this.canvasWrap?.classList.toggle('sketch-canvas-wrap--bg-adjust', hasBg && this.bgAdjustMode && !calibrating);
+    this.canvasWrap?.classList.toggle('sketch-canvas-wrap--bg-calib', calibrating);
+    if (hasBg) {
+      this._syncBgScaleSlider();
+      this._syncBgWidthInput();
+    }
   }
 
   _getBackgroundCanvasRect() {
@@ -2337,7 +2542,7 @@ export class SketchEditor {
     this.ctx.globalAlpha = this.bgTransform.opacity;
     this.ctx.drawImage(this.bgImage, r.x, r.y, r.w, r.h);
     this.ctx.restore();
-    if (this.bgAdjustMode) {
+    if (this.bgAdjustMode && !this._bgCalibrate) {
       this.ctx.save();
       this.ctx.strokeStyle = '#2196F3';
       this.ctx.lineWidth = 2;
@@ -2346,6 +2551,40 @@ export class SketchEditor {
       this.ctx.setLineDash([]);
       this.ctx.restore();
     }
+    this._drawBgCalibrationOverlay();
+  }
+
+  _drawBgCalibrationOverlay() {
+    if (!this._bgCalibrate) return;
+    const { a, b } = this._bgCalibrate;
+    const drawMark = (p, label) => {
+      const c = this.worldToCanvas(p.x, p.y);
+      this.ctx.fillStyle = '#e67e22';
+      this.ctx.beginPath();
+      this.ctx.arc(c.x, c.y, 7, 0, Math.PI * 2);
+      this.ctx.fill();
+      this.ctx.fillStyle = '#fff';
+      this.ctx.font = 'bold 11px system-ui, sans-serif';
+      this.ctx.textAlign = 'center';
+      this.ctx.textBaseline = 'middle';
+      this.ctx.fillText(label, c.x, c.y + 0.5);
+    };
+    if (a && b) {
+      const pa = this.worldToCanvas(a.x, a.y);
+      const pb = this.worldToCanvas(b.x, b.y);
+      this.ctx.save();
+      this.ctx.strokeStyle = '#e67e22';
+      this.ctx.lineWidth = 2.5;
+      this.ctx.setLineDash([6, 4]);
+      this.ctx.beginPath();
+      this.ctx.moveTo(pa.x, pa.y);
+      this.ctx.lineTo(pb.x, pb.y);
+      this.ctx.stroke();
+      this.ctx.setLineDash([]);
+      this.ctx.restore();
+    }
+    if (a) drawMark(a, '1');
+    if (b) drawMark(b, '2');
   }
 
   showToast(msg) {

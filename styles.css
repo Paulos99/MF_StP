@@ -2132,7 +2132,8 @@ body.sketch-modal-open {
     border-radius: 12px;
     box-shadow: 0 2px 12px rgba(0, 0, 0, 0.1);
     padding: 10px 12px;
-    min-width: 180px;
+    min-width: 220px;
+    max-width: min(280px, calc(100% - 24px));
     display: flex;
     flex-direction: column;
     gap: 8px;
@@ -2153,12 +2154,70 @@ body.sketch-modal-open {
 }
 
 .sketch-bg-panel__row span {
-    flex: 0 0 72px;
+    flex: 0 0 78px;
 }
 
 .sketch-bg-panel__row input[type="range"] {
     flex: 1;
     min-width: 0;
+}
+
+.sketch-bg-panel__width {
+    flex: 1;
+    min-width: 0;
+    border: 1px solid #d5ddd9;
+    border-radius: 6px;
+    padding: 4px 8px;
+    font-size: 12px;
+    font-family: inherit;
+}
+
+.sketch-bg-panel__actions {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.sketch-bg-panel__calib,
+.sketch-bg-panel__calib-apply,
+.sketch-bg-panel__calib-cancel {
+    border: none;
+    font-size: 12px;
+    font-weight: 600;
+    padding: 7px 10px;
+    border-radius: 6px;
+    cursor: pointer;
+    text-align: center;
+}
+
+.sketch-bg-panel__calib {
+    background: #fff7ed;
+    color: #c2410c;
+    border: 1px solid #fdba74;
+}
+
+.sketch-bg-panel__calib.active {
+    background: #ea580c;
+    color: #fff;
+    border-color: #ea580c;
+}
+
+.sketch-bg-panel__calib-apply {
+    background: var(--accent-color);
+    color: #fff;
+}
+
+.sketch-bg-panel__calib-cancel {
+    background: #f3f4f6;
+    color: #4b5563;
+}
+
+.sketch-bg-panel__calib-row {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding-top: 4px;
+    border-top: 1px dashed #e5e7eb;
 }
 
 .sketch-bg-panel__remove {
@@ -2174,6 +2233,33 @@ body.sketch-modal-open {
 
 .sketch-bg-panel__remove:hover {
     text-decoration: underline;
+}
+
+.sketch-bg-panel__toggle {
+    border: none;
+    background: rgba(1, 100, 79, 0.1);
+    color: var(--accent-color);
+    font-size: 12px;
+    font-weight: 600;
+    padding: 8px 10px;
+    border-radius: 6px;
+    cursor: pointer;
+    text-align: center;
+}
+
+.sketch-bg-panel__toggle--done,
+.sketch-bg-panel__toggle.active.sketch-bg-panel__toggle--done {
+    background: var(--accent-color);
+    color: #fff;
+    border: none;
+}
+
+.sketch-canvas-wrap--bg-adjust canvas {
+    cursor: default;
+}
+
+.sketch-canvas-wrap--bg-calib canvas {
+    cursor: crosshair;
 }
 
 .sketch-tool-btn.active {
@@ -4270,18 +4356,6 @@ body {
     align-items: center;
     gap: 16px;
     flex: 1;
-}
-
-.sketch-bg-panel__toggle {
-    border: none;
-    background: rgba(1, 100, 79, 0.1);
-    color: var(--accent-color);
-    font-size: 12px;
-    font-weight: 600;
-    padding: 6px 10px;
-    border-radius: 6px;
-    cursor: pointer;
-    text-align: left;
 }
 
 .sketch-openings-modal {
