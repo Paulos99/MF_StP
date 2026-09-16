@@ -1,5 +1,7 @@
 import {
   DRAW_GRID_STEP,
+  FINE_GRID_STEP,
+  FINE_ENTER_VEL,
   cloneVertices,
   createCutCornerVertices,
   createLShapeVertices,
@@ -8,11 +10,13 @@ import {
   createTShapeVertices,
   createUShapeVertices,
   createZShapeVertices,
+  formatMetersDisplay,
   getBounds,
   getEdges,
   labelForIndex,
   shoelaceArea,
   getPerimeter,
+  resolveAdaptiveDrawStep,
   snapPointDraw,
   snapPointEdit,
   solvePolygonFromConstraints,
@@ -37,6 +41,10 @@ const LONG_PRESS_MS = 500;
 const TOUCH_PAN_THRESHOLD = 12;
 const MIN_VERTEX_DIST = 0.5;
 const PREVIEW_LERP = 0.22;
+const SNAP_PULSE_MS = 140;
+const LABEL_PULSE_MS = 160;
+const FINE_TICK_FADE_MS = 180;
+const FINE_TICK_RADIUS_M = 0.75;
 const PANEL_SETTLE_MS = 2500;
 const PANEL_REVEAL_MS = 400;
 
@@ -118,6 +126,17 @@ export class SketchEditor {
     this._edgeActionRects = null;
     this._pendingDeleteIdx = null;
     this._previewPoint = null;
+    this._snapStep = DRAW_GRID_STEP;
+    this._snapVelocity = 0;
+    this._snapDwellMs = 0;
+    this._snapLastSample = null;
+    this._snapPointerType = 'mouse';
+    this._snapPulseUntil = 0;
+    this._snapPulseFrom = 1;
+    this._labelAnimUntil = 0;
+    this._labelAnimValue = null;
+    this._fineTicksAlpha = 0;
+    this._previewTarget = null;
     this._drawHistorySaved = false;
     this._renderRaf = null;
     this._fitScheduled = false;
@@ -606,7 +625,9 @@ export class SketchEditor {
     this.diagonalDimensions = {};
     this.closed = false;
     this._previewPoint = null;
+    this._previewSmooth = null;
     this._drawHistorySaved = false;
+    this._resetAdaptiveSnap();
     this._clearPanelOverlay();
     this._scheduleFit(true);
     this.render();
@@ -1388,7 +1409,12 @@ export class SketchEditor {
 
     if (!this.closed) {
       const w = this.canvasToWorld(cx, cy);
-      const snapped = snapPointDraw(w.x, w.y, this.vertices[this.vertices.length - 1], DRAW_GRID_STEP);
+      const snapped = snapPointDraw(
+        w.x,
+        w.y,
+        this.vertices[this.vertices.length - 1],
+        this._snapStep || DRAW_GRID_STEP
+      );
       if (this._isTooCloseToExisting(snapped.x, snapped.y)) return;
       if (!this._drawHistorySaved) {
         this._pushHistory();
@@ -1407,6 +1433,7 @@ export class SketchEditor {
     this._previewPoint = null;
     this._previewSmooth = null;
     this._drawHistorySaved = false;
+    this._resetAdaptiveSnap();
     this.edgeDimensions = buildEdgeDimensionsFromVertices(this.vertices);
     this._syncRoomFromShape();
     this.keypad.hide();
@@ -1437,21 +1464,28 @@ export class SketchEditor {
     }
 
     const w = this.canvasToWorld(cx, cy);
+    const isTouch = e.pointerType === 'touch' || this._isCoarsePointer();
+    this._updateAdaptiveSnap(w.x, w.y, isTouch);
+    const step = this._snapStep;
 
     if (this._dragIdx !== null && this.closed) {
       this._cancelLongPress(false);
-      const snapped = snapPointEdit(w.x, w.y, DRAW_GRID_STEP);
+      const snapped = snapPointEdit(w.x, w.y, step);
       this.vertices[this._dragIdx] = { ...this.vertices[this._dragIdx], x: snapped.x, y: snapped.y };
+      this._ensurePreviewSettleAnim();
       this._scheduleRender();
       return;
     }
 
     if (!this.closed && this.vertices.length > 0) {
-      const snapped = snapPointDraw(w.x, w.y, this.vertices[this.vertices.length - 1], DRAW_GRID_STEP);
+      const snapped = snapPointDraw(w.x, w.y, this.vertices[this.vertices.length - 1], step);
       if (!this._previewSmooth) this._previewSmooth = { ...snapped };
       this._previewSmooth.x += (snapped.x - this._previewSmooth.x) * PREVIEW_LERP;
       this._previewSmooth.y += (snapped.y - this._previewSmooth.y) * PREVIEW_LERP;
       this._previewPoint = { ...this._previewSmooth };
+      this._previewTarget = snapped;
+      this._notePreviewLength(snapped);
+      this._ensurePreviewSettleAnim();
       this._scheduleRender();
     }
 
@@ -1482,6 +1516,106 @@ export class SketchEditor {
     }
   }
 
+  _updateAdaptiveSnap(worldX, worldY, isTouch) {
+    const now = performance.now();
+    this._snapPointerType = isTouch ? 'touch' : 'mouse';
+    const prev = this._snapLastSample;
+    if (prev && now > prev.t) {
+      const dt = (now - prev.t) / 1000;
+      const dist = Math.hypot(worldX - prev.x, worldY - prev.y);
+      const instant = dist / Math.max(dt, 1e-4);
+      this._snapVelocity = this._snapVelocity * 0.55 + instant * 0.45;
+      const enterVel = isTouch ? FINE_ENTER_VEL * 0.7 : FINE_ENTER_VEL;
+      if (this._snapVelocity < enterVel) {
+        this._snapDwellMs += now - prev.t;
+      } else {
+        this._snapDwellMs = 0;
+      }
+    } else {
+      this._snapVelocity = 0;
+      this._snapDwellMs = 0;
+    }
+    this._snapLastSample = { x: worldX, y: worldY, t: now };
+
+    const next = resolveAdaptiveDrawStep({
+      velocity: this._snapVelocity,
+      dwellMs: this._snapDwellMs,
+      currentStep: this._snapStep,
+      isTouch,
+    });
+    if (next !== this._snapStep) {
+      this._snapStep = next;
+      this._snapPulseFrom = next <= FINE_GRID_STEP ? 1.35 : 0.75;
+      this._snapPulseUntil = now + SNAP_PULSE_MS;
+      this._updateSnapLegend();
+    }
+  }
+
+  _notePreviewLength(snapped) {
+    if (!this.vertices.length) return;
+    const last = this.vertices[this.vertices.length - 1];
+    const len = Math.hypot(snapped.x - last.x, snapped.y - last.y);
+    const rounded = Math.round(len / FINE_GRID_STEP) * FINE_GRID_STEP;
+    const key = rounded.toFixed(2);
+    if (this._labelAnimValue !== key) {
+      this._labelAnimValue = key;
+      this._labelAnimUntil = performance.now() + LABEL_PULSE_MS;
+    }
+  }
+
+  _ensurePreviewSettleAnim() {
+    if (this._previewAnimRaf) return;
+    const tick = () => {
+      this._previewAnimRaf = null;
+      let needs = false;
+      const now = performance.now();
+      if (this._previewSmooth && this._previewTarget) {
+        const dx = this._previewTarget.x - this._previewSmooth.x;
+        const dy = this._previewTarget.y - this._previewSmooth.y;
+        if (Math.hypot(dx, dy) > 0.001) {
+          this._previewSmooth.x += dx * PREVIEW_LERP;
+          this._previewSmooth.y += dy * PREVIEW_LERP;
+          this._previewPoint = { ...this._previewSmooth };
+          needs = true;
+        } else {
+          this._previewSmooth = { ...this._previewTarget };
+          this._previewPoint = { ...this._previewTarget };
+        }
+      }
+      const targetAlpha = this._snapStep <= FINE_GRID_STEP ? 1 : 0;
+      if (Math.abs(this._fineTicksAlpha - targetAlpha) > 0.01) {
+        const dir = targetAlpha > this._fineTicksAlpha ? 1 : -1;
+        this._fineTicksAlpha = Math.max(0, Math.min(1, this._fineTicksAlpha + dir * (16 / FINE_TICK_FADE_MS)));
+        needs = true;
+      } else {
+        this._fineTicksAlpha = targetAlpha;
+      }
+      if (now < this._snapPulseUntil || now < this._labelAnimUntil) needs = true;
+      if (needs) {
+        this._scheduleRender();
+        this._previewAnimRaf = requestAnimationFrame(tick);
+      }
+    };
+    this._previewAnimRaf = requestAnimationFrame(tick);
+  }
+
+  _updateSnapLegend() {
+    if (!this.gridLegendEl) return;
+    this.gridLegendEl.textContent = this._snapStep <= FINE_GRID_STEP
+      ? 'шаг 5 см'
+      : '1 клетка = 1 м';
+  }
+
+  _resetAdaptiveSnap() {
+    this._snapStep = DRAW_GRID_STEP;
+    this._snapVelocity = 0;
+    this._snapDwellMs = 0;
+    this._snapLastSample = null;
+    this._fineTicksAlpha = 0;
+    this._previewTarget = null;
+    this._updateSnapLegend();
+  }
+
   _onPointerUp(e) {
     if (this._bgDragging) {
       this._bgDragging = false;
@@ -1502,6 +1636,12 @@ export class SketchEditor {
       this.edgeDimensions = buildEdgeDimensionsFromVertices(this.vertices);
       this._syncRoomFromShape();
       this._beginPanelSettle();
+    }
+    if (!this.closed) {
+      // keep fine mode while drawing; only decay velocity sample gap
+      this._snapLastSample = null;
+    } else {
+      this._resetAdaptiveSnap();
     }
     this.render();
     this._updateUi();
@@ -1834,9 +1974,10 @@ export class SketchEditor {
 
     let bottomText = '—';
     const touchUi = this._isCoarsePointer() || window.matchMedia?.('(max-width: 899px)')?.matches;
+    const fine = this._snapStep <= FINE_GRID_STEP;
     let hintText = touchUi
-      ? 'Тап — точка, сдвиг — панорама · шаг 1 м'
-      : 'Кликайте по сетке — шаг 1 м';
+      ? (fine ? 'Медленно — шаг 5 см' : 'Тап — точка, сдвиг — панорама · шаг 1 м')
+      : (fine ? 'Замедлите курсор — шаг 5 см' : 'Кликайте по сетке — шаг 1 м · замедление — 5 см');
 
     if (this.closed && this.vertices.length >= 3) {
       const area = shoelaceArea(this.vertices);
@@ -1909,6 +2050,7 @@ export class SketchEditor {
 
     this._updateBgUi();
     this._positionEdgeActions();
+    this._updateSnapLegend();
   }
 
   _loadBackgroundImage(file) {
@@ -2114,8 +2256,15 @@ export class SketchEditor {
     }
 
     if (!this.closed && this.vertices.length > 0 && this._previewPoint) {
-      const last = this.worldToCanvas(this.vertices[this.vertices.length - 1].x, this.vertices[this.vertices.length - 1].y);
+      const lastV = this.vertices[this.vertices.length - 1];
+      const last = this.worldToCanvas(lastV.x, lastV.y);
       const preview = this.worldToCanvas(this._previewPoint.x, this._previewPoint.y);
+      const target = this._previewTarget || this._previewPoint;
+
+      if (this._fineTicksAlpha > 0.01) {
+        this._drawFineSnapTicks(lastV, target, this._fineTicksAlpha);
+      }
+
       this.ctx.setLineDash([6, 4]);
       this.ctx.strokeStyle = 'rgba(1, 100, 79, 0.5)';
       this.ctx.lineWidth = 2;
@@ -2124,10 +2273,33 @@ export class SketchEditor {
       this.ctx.lineTo(preview.x, preview.y);
       this.ctx.stroke();
       this.ctx.setLineDash([]);
-      this.ctx.fillStyle = 'rgba(1, 100, 79, 0.35)';
+
+      const now = performance.now();
+      let pulse = 1;
+      if (now < this._snapPulseUntil) {
+        const t = 1 - (this._snapPulseUntil - now) / SNAP_PULSE_MS;
+        const ease = t * t * (3 - 2 * t);
+        pulse = this._snapPulseFrom + (1 - this._snapPulseFrom) * ease;
+      }
+      const r = 6 * pulse;
+      this.ctx.fillStyle = this._snapStep <= FINE_GRID_STEP
+        ? 'rgba(1, 100, 79, 0.55)'
+        : 'rgba(1, 100, 79, 0.35)';
       this.ctx.beginPath();
-      this.ctx.arc(preview.x, preview.y, 6, 0, Math.PI * 2);
+      this.ctx.arc(preview.x, preview.y, r, 0, Math.PI * 2);
       this.ctx.fill();
+      if (this._snapStep <= FINE_GRID_STEP) {
+        this.ctx.strokeStyle = 'rgba(1, 100, 79, 0.75)';
+        this.ctx.lineWidth = 1.5;
+        this.ctx.beginPath();
+        this.ctx.arc(preview.x, preview.y, r + 3, 0, Math.PI * 2);
+        this.ctx.stroke();
+      }
+
+      this._drawPreviewLengthBadge(last, preview, lastV, target);
+    } else if (this._dragIdx !== null && this.closed && this._fineTicksAlpha > 0.01) {
+      const v = this.vertices[this._dragIdx];
+      if (v) this._drawFineSnapTicks(v, v, this._fineTicksAlpha, true);
     }
 
     this.vertices.forEach((v, i) => {
@@ -2423,6 +2595,107 @@ export class SketchEditor {
       this.ctx.lineTo(x2, y2);
       this.ctx.stroke();
     }
+  }
+
+  _drawFineSnapTicks(fromPoint, atPoint, alpha, crossOnly = false) {
+    const a = Math.max(0, Math.min(1, alpha));
+    if (a < 0.01) return;
+    const dx = Math.abs(atPoint.x - fromPoint.x);
+    const dy = Math.abs(atPoint.y - fromPoint.y);
+    const axis = crossOnly ? 'both' : (dx >= dy ? 'h' : 'v');
+    const r = FINE_TICK_RADIUS_M;
+    const step = FINE_GRID_STEP;
+
+    this.ctx.save();
+    this.ctx.globalAlpha = a * 0.85;
+
+    const drawTickAt = (wx, wy, major) => {
+      const p = this.worldToCanvas(wx, wy);
+      const len = major ? 7 : 4;
+      this.ctx.strokeStyle = major ? 'rgba(1, 100, 79, 0.55)' : 'rgba(1, 100, 79, 0.28)';
+      this.ctx.lineWidth = major ? 1.5 : 1;
+      this.ctx.beginPath();
+      if (axis === 'h') {
+        this.ctx.moveTo(p.x, p.y - len);
+        this.ctx.lineTo(p.x, p.y + len);
+      } else if (axis === 'v') {
+        this.ctx.moveTo(p.x - len, p.y);
+        this.ctx.lineTo(p.x + len, p.y);
+      } else {
+        this.ctx.moveTo(p.x, p.y - len);
+        this.ctx.lineTo(p.x, p.y + len);
+        this.ctx.moveTo(p.x - len, p.y);
+        this.ctx.lineTo(p.x + len, p.y);
+      }
+      this.ctx.stroke();
+    };
+
+    if (axis === 'h' || axis === 'both') {
+      const y = axis === 'both' ? atPoint.y : fromPoint.y;
+      const i0 = Math.ceil((atPoint.x - r) / step - 1e-9);
+      const i1 = Math.floor((atPoint.x + r) / step + 1e-9);
+      for (let i = i0; i <= i1; i++) {
+        const x = i * step;
+        const major = Math.abs(i * step - Math.round(i * step)) < 1e-9;
+        drawTickAt(x, y, major);
+      }
+    }
+    if (axis === 'v' || axis === 'both') {
+      const x = axis === 'both' ? atPoint.x : fromPoint.x;
+      const i0 = Math.ceil((atPoint.y - r) / step - 1e-9);
+      const i1 = Math.floor((atPoint.y + r) / step + 1e-9);
+      for (let i = i0; i <= i1; i++) {
+        const y = i * step;
+        const major = Math.abs(i * step - Math.round(i * step)) < 1e-9;
+        drawTickAt(x, y, major);
+      }
+    }
+
+    this.ctx.restore();
+  }
+
+  _drawPreviewLengthBadge(lastCanvas, previewCanvas, lastWorld, previewWorld) {
+    const len = Math.hypot(previewWorld.x - lastWorld.x, previewWorld.y - lastWorld.y);
+    if (len < 0.04) return;
+    const mx = (lastCanvas.x + previewCanvas.x) / 2;
+    const my = (lastCanvas.y + previewCanvas.y) / 2;
+    const text = `${formatMetersDisplay(len)} м`;
+    this.ctx.save();
+    this.ctx.font = '600 12px system-ui, sans-serif';
+    const metrics = this.ctx.measureText(text);
+    const padX = 8;
+    const padY = 5;
+    const bw = metrics.width + padX * 2;
+    const bh = 12 + padY * 2;
+    const now = performance.now();
+    let scale = 1;
+    if (now < this._labelAnimUntil) {
+      const t = 1 - (this._labelAnimUntil - now) / LABEL_PULSE_MS;
+      const ease = t * t * (3 - 2 * t);
+      scale = 1.12 - 0.12 * ease;
+    }
+    this.ctx.translate(mx, my - 14);
+    this.ctx.scale(scale, scale);
+    this.ctx.translate(-bw / 2, -bh / 2);
+    this.ctx.fillStyle = ACCENT;
+    this._roundRectPath(-0, 0, bw, bh, 8);
+    this.ctx.fill();
+    this.ctx.fillStyle = '#fff';
+    this.ctx.textAlign = 'center';
+    this.ctx.textBaseline = 'middle';
+    this.ctx.fillText(text, bw / 2, bh / 2 + 0.5);
+    this.ctx.restore();
+  }
+
+  _roundRectPath(x, y, w, h, r) {
+    const rr = Math.min(r, w / 2, h / 2);
+    this.ctx.beginPath();
+    this.ctx.moveTo(x + rr, y);
+    this.ctx.arcTo(x + w, y, x + w, y + h, rr);
+    this.ctx.arcTo(x + w, y + h, x, y + h, rr);
+    this.ctx.arcTo(x, y + h, x, y, rr);
+    this.ctx.arcTo(x, y, x + w, y, rr);
+    this.ctx.closePath();
   }
 
   _drawGrid(w, h) {

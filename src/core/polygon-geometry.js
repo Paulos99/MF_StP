@@ -2,6 +2,10 @@ import { roundMeters } from './geometry.js';
 
 export const GRID_STEP = 0.1; // 10 cm — точные размеры
 export const DRAW_GRID_STEP = 1.0; // 1 м — построение формы в редакторе
+export const FINE_GRID_STEP = 0.05; // 5 см — точная привязка при замедлении
+export const FINE_ENTER_VEL = 0.35; // м/с — вход в fine
+export const FINE_EXIT_VEL = 0.9; // м/с — выход из fine
+export const FINE_DWELL_MS = 100; // удержание низкой скорости перед fine
 export const VERTEX_LABELS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
 
 export function labelForIndex(i) {
@@ -189,7 +193,7 @@ export function snapPoint(x, y, step = GRID_STEP) {
   return { x: snapToGrid(x, step), y: snapToGrid(y, step) };
 }
 
-/** Привязка при рисовании: сетка 1 м + горизонталь/вертикаль от предыдущей точки */
+/** Привязка при рисовании: сетка + горизонталь/вертикаль от предыдущей точки */
 export function snapPointDraw(x, y, fromPoint, step = DRAW_GRID_STEP) {
   if (!fromPoint) return snapPoint(x, y, step);
 
@@ -205,6 +209,31 @@ export function snapPointDraw(x, y, fromPoint, step = DRAW_GRID_STEP) {
 
 export function snapPointEdit(x, y, step = DRAW_GRID_STEP) {
   return snapPoint(x, y, step);
+}
+
+/**
+ * Adaptive draw/edit snap step: coarse 1 m while moving fast,
+ * fine 5 cm after dwelling at low velocity (with hysteresis).
+ * @param {{ velocity: number, dwellMs: number, currentStep: number, isTouch?: boolean }} opts
+ * @returns {number} DRAW_GRID_STEP | FINE_GRID_STEP
+ */
+export function resolveAdaptiveDrawStep({
+  velocity = Infinity,
+  dwellMs = 0,
+  currentStep = DRAW_GRID_STEP,
+  isTouch = false,
+} = {}) {
+  const enterVel = isTouch ? FINE_ENTER_VEL * 0.7 : FINE_ENTER_VEL;
+  const exitVel = isTouch ? FINE_EXIT_VEL * 0.85 : FINE_EXIT_VEL;
+  const inFine = currentStep <= FINE_GRID_STEP + 1e-9;
+
+  if (inFine) {
+    if (velocity > exitVel) return DRAW_GRID_STEP;
+    return FINE_GRID_STEP;
+  }
+
+  if (velocity < enterVel && dwellMs >= FINE_DWELL_MS) return FINE_GRID_STEP;
+  return DRAW_GRID_STEP;
 }
 
 export function pointInPolygon(x, y, vertices) {
@@ -502,5 +531,5 @@ export function intersectRectWithPolygon(x, y, w, h, vertices) {
 
 export function formatMetersDisplay(value) {
   if (!Number.isFinite(value)) return '—';
-  return value.toFixed(2);
+  return value.toFixed(2).replace('.', ',');
 }
