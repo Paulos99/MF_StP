@@ -5,8 +5,10 @@ export const DRAW_GRID_STEP = 1.0; // 1 м — построение формы �
 export const FINE_GRID_STEP = 0.05; // 5 см — точная привязка между клетками
 /** Узкая зона «магнита» к целому метру (м); вне неё сразу шаг 5 см */
 export const METER_MAGNET_M = 0.08;
-/** При очень быстром движении не входим в fine (м/с), чтобы не дёргать зум */
-export const FINE_SWEEP_VEL = 2.5;
+/** Зум включается только при медленном движении (м/с) */
+export const FINE_ZOOM_ENTER_VEL = 0.4;
+export const FINE_ZOOM_EXIT_VEL = 0.85;
+export const FINE_ZOOM_DWELL_MS = 140;
 export const VERTEX_LABELS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
 
 export function labelForIndex(i) {
@@ -216,20 +218,17 @@ export function snapPointEdit(x, y, step = DRAW_GRID_STEP) {
  * Adaptive snap: between meter cells → 5 cm immediately;
  * near a whole-meter line (narrow magnet) → 1 m.
  * Hysteresis via currentStep keeps fine stable near the magnet edge.
- * Optional sweep velocity keeps coarse while flying across the canvas.
- * @param {{ x: number, y: number, fromPoint?: {x:number,y:number}|null, velocity?: number, magnetM?: number, currentStep?: number }} opts
+ * Zoom is controlled separately (slow movement only).
+ * @param {{ x: number, y: number, fromPoint?: {x:number,y:number}|null, magnetM?: number, currentStep?: number }} opts
  * @returns {number} DRAW_GRID_STEP | FINE_GRID_STEP
  */
 export function resolveAdaptiveDrawStep({
   x = 0,
   y = 0,
   fromPoint = null,
-  velocity = 0,
   magnetM = METER_MAGNET_M,
   currentStep = DRAW_GRID_STEP,
 } = {}) {
-  if (velocity > FINE_SWEEP_VEL) return DRAW_GRID_STEP;
-
   const distToMeter = (v) => Math.abs(v - Math.round(v));
   const inFine = currentStep <= FINE_GRID_STEP + 1e-9;
   // Уже в fine — возвращаемся к 1 м только ближе к линии метра
@@ -254,6 +253,18 @@ export function resolveAdaptiveDrawStep({
   }
 
   return nearMeter ? DRAW_GRID_STEP : FINE_GRID_STEP;
+}
+
+/** Should the canvas gently zoom in for fine placement? */
+export function shouldFineZoom({
+  inFineSnap = false,
+  velocity = Infinity,
+  dwellMs = 0,
+  zoomActive = false,
+} = {}) {
+  if (!inFineSnap) return false;
+  if (zoomActive) return velocity <= FINE_ZOOM_EXIT_VEL;
+  return velocity <= FINE_ZOOM_ENTER_VEL && dwellMs >= FINE_ZOOM_DWELL_MS;
 }
 
 export function pointInPolygon(x, y, vertices) {

@@ -1,6 +1,7 @@
 import {
   DRAW_GRID_STEP,
   FINE_GRID_STEP,
+  FINE_ZOOM_ENTER_VEL,
   METER_MAGNET_M,
   cloneVertices,
   createCutCornerVertices,
@@ -17,6 +18,7 @@ import {
   shoelaceArea,
   getPerimeter,
   resolveAdaptiveDrawStep,
+  shouldFineZoom,
   snapPointDraw,
   snapPointEdit,
   solvePolygonFromConstraints,
@@ -46,8 +48,9 @@ const LABEL_PULSE_MS = 160;
 const FINE_TICK_FADE_MS = 180;
 const FINE_TICK_RADIUS_M = 0.75;
 const FINE_ZOOM_FACTOR = 1.5;
-const FINE_ZOOM_IN_LERP = 0.11;
-const FINE_ZOOM_OUT_LERP = 0.28;
+const FINE_ZOOM_IN_MS = 520;
+const FINE_ZOOM_OUT_MS = 320;
+const FINE_ZOOM_OUT_FAST_MS = 220;
 const PANEL_SETTLE_MS = 2500;
 const PANEL_REVEAL_MS = 400;
 
@@ -139,12 +142,18 @@ export class SketchEditor {
     this._labelAnimValue = null;
     this._fineTicksAlpha = 0;
     this._previewTarget = null;
+    this._zoomSlowDwellMs = 0;
+    this._zoomWanted = false;
     this._zoomBeforeFine = null;
     this._fineZoomMul = 1;
     this._fineZoomTarget = 1;
     this._zoomAnchorWorld = null;
     this._zoomAnimRaf = null;
     this._zoomAnimFast = false;
+    this._zoomAnimFromMul = 1;
+    this._zoomAnimToMul = 1;
+    this._zoomAnimStart = 0;
+    this._zoomAnimDuration = FINE_ZOOM_IN_MS;
     this._drawHistorySaved = false;
     this._renderRaf = null;
     this._fitScheduled = false;
@@ -1443,7 +1452,6 @@ export class SketchEditor {
         x: w.x,
         y: w.y,
         fromPoint: from,
-        velocity: this._snapVelocity,
         magnetM: METER_MAGNET_M,
         currentStep: this._snapStep,
       });
@@ -1564,9 +1572,16 @@ export class SketchEditor {
       const dt = (now - prev.t) / 1000;
       const dist = Math.hypot(worldX - prev.x, worldY - prev.y);
       const instant = dist / Math.max(dt, 1e-4);
-      this._snapVelocity = this._snapVelocity * 0.5 + instant * 0.5;
+      this._snapVelocity = this._snapVelocity * 0.55 + instant * 0.45;
+      const enterVel = isTouch ? FINE_ZOOM_ENTER_VEL * 0.75 : FINE_ZOOM_ENTER_VEL;
+      if (this._snapVelocity <= enterVel) {
+        this._zoomSlowDwellMs += now - prev.t;
+      } else {
+        this._zoomSlowDwellMs = 0;
+      }
     } else {
       this._snapVelocity = 0;
+      this._zoomSlowDwellMs = 0;
     }
     this._snapLastSample = { x: worldX, y: worldY, t: now };
 
@@ -1575,7 +1590,6 @@ export class SketchEditor {
       x: worldX,
       y: worldY,
       fromPoint,
-      velocity: this._snapVelocity,
       magnetM: magnet,
       currentStep: this._snapStep,
     });
@@ -1587,10 +1601,19 @@ export class SketchEditor {
       this._updateSnapLegend();
     }
 
-    const fine = next <= FINE_GRID_STEP;
-    if (fine) {
+    const inFineSnap = next <= FINE_GRID_STEP;
+    const zoomWanted = shouldFineZoom({
+      inFineSnap,
+      velocity: this._snapVelocity,
+      dwellMs: this._zoomSlowDwellMs,
+      zoomActive: this._zoomWanted || this._fineZoomMul > 1.02,
+    });
+
+    if (zoomWanted) {
+      this._zoomWanted = true;
       this._enterFineZoom({ x: worldX, y: worldY }, anchorCanvas);
-    } else if (this._fineZoomTarget > 1.01 || this._fineZoomMul > 1.01) {
+    } else if (this._zoomWanted || this._fineZoomTarget > 1.01 || this._fineZoomMul > 1.01) {
+      this._zoomWanted = false;
       this._leaveFineZoom(false);
     }
   }
@@ -1607,6 +1630,28 @@ export class SketchEditor {
     this.panY += before.y - after.y;
   }
 
+  _easeInOutCubic(t) {
+    return t < 0.5 ? 4 * t * t * t : 1 - ((-2 * t + 2) ** 3) / 2;
+  }
+
+  _startZoomTransition(toMul, durationMs) {
+    if (this._zoomBeforeFine == null) return;
+    // Уже едем к этой цели — не перезапускаем анимацию каждый mousemove
+    if (Math.abs(this._fineZoomTarget - toMul) < 0.004 && this._zoomAnimRaf) return;
+    const from = this._fineZoomMul;
+    if (Math.abs(from - toMul) < 0.004) {
+      this._fineZoomMul = toMul;
+      this._fineZoomTarget = toMul;
+      return;
+    }
+    this._zoomAnimFromMul = from;
+    this._zoomAnimToMul = toMul;
+    this._fineZoomTarget = toMul;
+    this._zoomAnimStart = performance.now();
+    this._zoomAnimDuration = durationMs;
+    this._ensureFineZoomAnim();
+  }
+
   _enterFineZoom(anchorWorld, anchorCanvas) {
     if (this._zoomBeforeFine == null) {
       const mul = Math.max(this._fineZoomMul, 1);
@@ -1617,22 +1662,28 @@ export class SketchEditor {
         this._zoomAnchorWorld = this.canvasToWorld(anchorCanvas.cx, anchorCanvas.cy);
       }
     }
-    this._fineZoomTarget = FINE_ZOOM_FACTOR;
     this._zoomAnimFast = false;
-    this._ensureFineZoomAnim();
+    this._startZoomTransition(FINE_ZOOM_FACTOR, FINE_ZOOM_IN_MS);
   }
 
   _leaveFineZoom(fast) {
-    this._fineZoomTarget = 1;
+    this._zoomWanted = false;
     this._zoomAnimFast = !!fast;
-    this._ensureFineZoomAnim();
+    if (this._zoomBeforeFine == null) {
+      this._fineZoomMul = 1;
+      this._fineZoomTarget = 1;
+      return;
+    }
+    this._startZoomTransition(1, fast ? FINE_ZOOM_OUT_FAST_MS : FINE_ZOOM_OUT_MS);
   }
 
   _exitFineZoomAfterPlace(anchorWorld) {
     this._snapStep = DRAW_GRID_STEP;
     this._snapLastSample = null;
     this._snapVelocity = 0;
+    this._zoomSlowDwellMs = 0;
     this._fineTicksAlpha = 0;
+    this._zoomWanted = false;
     if (anchorWorld) this._zoomAnchorWorld = { ...anchorWorld };
     this._updateSnapLegend();
     this._leaveFineZoom(true);
@@ -1640,28 +1691,32 @@ export class SketchEditor {
 
   _ensureFineZoomAnim() {
     if (this._zoomAnimRaf) return;
-    const tick = () => {
+    const tick = (now) => {
       this._zoomAnimRaf = null;
       if (this._zoomBeforeFine == null) {
         this._fineZoomMul = 1;
         this._fineZoomTarget = 1;
         return;
       }
-      const lerp = this._zoomAnimFast ? FINE_ZOOM_OUT_LERP : FINE_ZOOM_IN_LERP;
-      const prev = this._fineZoomMul;
-      const next = prev + (this._fineZoomTarget - prev) * lerp;
-      const done = Math.abs(next - this._fineZoomTarget) < 0.004;
-      this._fineZoomMul = done ? this._fineZoomTarget : next;
+      const elapsed = now - this._zoomAnimStart;
+      const t = Math.min(1, elapsed / Math.max(16, this._zoomAnimDuration));
+      const eased = this._easeInOutCubic(t);
+      this._fineZoomMul = this._zoomAnimFromMul
+        + (this._zoomAnimToMul - this._zoomAnimFromMul) * eased;
       const targetZoom = this._zoomBeforeFine * this._fineZoomMul;
       this._setZoomAroundWorld(this._zoomAnchorWorld, targetZoom);
       this._scheduleRender();
-      if (!done) {
+      if (t < 1) {
         this._zoomAnimRaf = requestAnimationFrame(tick);
-      } else if (this._fineZoomTarget <= 1.001) {
-        this.zoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, this._zoomBeforeFine));
-        this._zoomBeforeFine = null;
-        this._fineZoomMul = 1;
-        this._zoomAnimFast = false;
+      } else {
+        this._fineZoomMul = this._zoomAnimToMul;
+        this._fineZoomTarget = this._zoomAnimToMul;
+        if (this._fineZoomTarget <= 1.001) {
+          this.zoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, this._zoomBeforeFine));
+          this._zoomBeforeFine = null;
+          this._fineZoomMul = 1;
+          this._zoomAnimFast = false;
+        }
       }
     };
     this._zoomAnimRaf = requestAnimationFrame(tick);
@@ -1726,6 +1781,8 @@ export class SketchEditor {
     this._snapStep = DRAW_GRID_STEP;
     this._snapVelocity = 0;
     this._snapLastSample = null;
+    this._zoomSlowDwellMs = 0;
+    this._zoomWanted = false;
     this._fineTicksAlpha = 0;
     this._previewTarget = null;
     if (this._zoomAnimRaf) {
@@ -2107,8 +2164,8 @@ export class SketchEditor {
     const touchUi = this._isCoarsePointer() || window.matchMedia?.('(max-width: 899px)')?.matches;
     const fine = this._snapStep <= FINE_GRID_STEP;
     let hintText = touchUi
-      ? (fine ? 'Шаг 5 см · зум увеличен' : 'Тап — точка · между клетками — 5 см')
-      : (fine ? 'Шаг 5 см · зум +50%' : 'Шаг 1 м у линий сетки · между клетками — сразу 5 см');
+      ? (fine ? 'Шаг 5 см · медленно — зум' : 'Тап — точка · между клетками — 5 см')
+      : (fine ? 'Шаг 5 см · ведите медленно для зума' : 'Шаг 1 м у линий · между клетками — сразу 5 см');
 
     if (this.closed && this.vertices.length >= 3) {
       const area = shoelaceArea(this.vertices);
