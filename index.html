@@ -418,40 +418,40 @@
                 <span class="stat-card-button__text">Купить MultiFRAME</span>
               </a>
             </div>
-          </div>
-        </div>
 
-        <aside class="workspace-results" id="resultsAside">
-          <div class="workspace-results__scroll">
-            <div class="results-card card is-expanded">
-              <div class="results-header">
-                <h2>Результаты</h2>
-                <button type="button" class="btn-link workspace-results__close" id="resultsDrawerCloseBtn" hidden aria-label="Закрыть">Закрыть</button>
-                <button type="button" class="btn-share-compact" id="shareBtn" hidden aria-hidden="true"></button>
-                <button type="button" class="btn-link results-collapse-btn" id="resultsCollapseBtn" hidden></button>
-                <button type="button" class="btn-link secondary-results-toggle" id="resultsExpandBtn" hidden></button>
-              </div>
-              <div class="results-preview" id="resultsPreview">
-                <div id="resultsText" class="results-text">
-                  <div class="rb-empty">Выберите способ слева — здесь появятся детали</div>
+            <aside class="workspace-results" id="resultsAside" hidden>
+              <div class="workspace-results__scroll">
+                <div class="results-card card is-expanded">
+                  <div class="results-header">
+                    <h2>Результаты</h2>
+                    <button type="button" class="btn-link workspace-results__close" id="resultsDrawerCloseBtn" hidden aria-label="Скрыть">Скрыть</button>
+                    <button type="button" class="btn-share-compact" id="shareBtn" hidden aria-hidden="true"></button>
+                    <button type="button" class="btn-link results-collapse-btn" id="resultsCollapseBtn" hidden></button>
+                    <button type="button" class="btn-link secondary-results-toggle" id="resultsExpandBtn" hidden></button>
+                  </div>
+                  <div class="results-preview" id="resultsPreview">
+                    <div id="resultsText" class="results-text">
+                      <div class="rb-empty">Выберите способ слева — здесь появятся детали</div>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="workspace-results__actions">
+                  <button type="button" class="btn btn-primary workspace-results__btn" id="downloadBtn" disabled>
+                    <svg class="btn-print-arrow" width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+                      <path d="M7 9L12 14L17 9" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+                      <path d="M7 14L12 19L17 14" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+                    </svg>
+                    Скачать PDF
+                  </button>
+                  <button type="button" class="btn btn-secondary workspace-results__btn" id="shareBtnSecondary" title="Скопировать ссылку на расчёт">
+                    Поделиться
+                  </button>
                 </div>
               </div>
-            </div>
-
-            <div class="workspace-results__actions">
-              <button type="button" class="btn btn-primary workspace-results__btn" id="downloadBtn" disabled>
-                <svg class="btn-print-arrow" width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-                  <path d="M7 9L12 14L17 9" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
-                  <path d="M7 14L12 19L17 14" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
-                </svg>
-                Скачать PDF
-              </button>
-              <button type="button" class="btn btn-secondary workspace-results__btn" id="shareBtnSecondary" title="Скопировать ссылку на расчёт">
-                Поделиться
-              </button>
-            </div>
+            </aside>
           </div>
-        </aside>
+        </div>
       </div>
     </main>
 

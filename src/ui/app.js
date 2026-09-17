@@ -123,24 +123,60 @@ function openResultsDrawer() {
   const aside = $('resultsAside');
   if (!aside || !state.hasResults) return;
   aside.hidden = false;
-  document.body.classList.add('results-drawer-open');
+  // force reflow so transition runs when opening from hidden
+  void aside.offsetHeight;
+  document.body.classList.add('results-sheet-open');
+  document.body.classList.remove('results-drawer-open');
   const backdrop = $('resultsDrawerBackdrop');
-  if (backdrop) backdrop.hidden = false;
+  if (backdrop) backdrop.hidden = true;
   const closeBtn = $('resultsDrawerCloseBtn');
   if (closeBtn) closeBtn.hidden = !isLaptopLayout();
+  syncResultsToggleLabel(true);
   fitSketchAfterLayoutChange();
 }
 
 function closeResultsDrawer() {
+  document.body.classList.remove('results-sheet-open');
   document.body.classList.remove('results-drawer-open');
   const backdrop = $('resultsDrawerBackdrop');
   if (backdrop) backdrop.hidden = true;
   const closeBtn = $('resultsDrawerCloseBtn');
   if (closeBtn) closeBtn.hidden = true;
-  // On laptop keep aside in DOM but closed; hide if no results
   const aside = $('resultsAside');
-  if (aside && isLaptopLayout() && !state.hasResults) aside.hidden = true;
+  if (aside && isLaptopLayout()) {
+    // keep in DOM for exit animation, then hide after transition if no results
+    const hideAfter = () => {
+      if (!document.body.classList.contains('results-sheet-open') && !state.hasResults) {
+        aside.hidden = true;
+      }
+    };
+    window.setTimeout(hideAfter, 420);
+  }
+  syncResultsToggleLabel(false);
   fitSketchAfterLayoutChange();
+}
+
+function syncResultsToggleLabel(open) {
+  const openBtn = $('openResultsDrawerBtn');
+  if (!openBtn) return;
+  const text = openBtn.querySelector('.stat-card-button__text');
+  const label = open ? 'Скрыть' : 'Результаты';
+  if (text) text.textContent = label;
+  else openBtn.textContent = label;
+  openBtn.setAttribute('aria-expanded', open ? 'true' : 'false');
+}
+
+function revealResultsAfterCalc() {
+  if (isMobileLayout()) {
+    revealMobileResultsAfterCalc();
+    return;
+  }
+  syncResultsAsideVisibility();
+  if (isLaptopLayout() && state.hasResults) {
+    openResultsDrawer();
+  } else if (isWideLayout()) {
+    fitSketchAfterLayoutChange();
+  }
 }
 
 function syncResultsAsideVisibility() {
@@ -150,11 +186,14 @@ function syncResultsAsideVisibility() {
   const laptop = isLaptopLayout();
   const wide = isWideLayout();
   const mobile = isMobileLayout();
+  const sheetOpen = document.body.classList.contains('results-sheet-open');
 
   document.body.classList.toggle('has-results-aside', ready && wide);
 
   if (openBtn) {
     openBtn.hidden = !(ready && laptop);
+    if (!(ready && laptop)) syncResultsToggleLabel(false);
+    else syncResultsToggleLabel(sheetOpen);
   }
 
   if (!aside) return;
@@ -166,16 +205,20 @@ function syncResultsAsideVisibility() {
   }
 
   if (wide) {
-    closeResultsDrawer();
+    document.body.classList.remove('results-sheet-open');
     aside.hidden = !ready;
     return;
   }
 
   if (laptop) {
-    aside.hidden = !ready;
-    if (!ready) closeResultsDrawer();
+    if (!ready) {
+      document.body.classList.remove('results-sheet-open');
+      aside.hidden = true;
+    } else {
+      aside.hidden = false;
+    }
     const closeBtn = $('resultsDrawerCloseBtn');
-    if (closeBtn) closeBtn.hidden = !document.body.classList.contains('results-drawer-open');
+    if (closeBtn) closeBtn.hidden = !document.body.classList.contains('results-sheet-open');
   }
 }
 
@@ -1133,14 +1176,7 @@ function setupFormListeners() {
   $('calculateBtn')?.addEventListener('click', async () => {
     const ok = await runCalculation();
     if (!ok) return;
-    if (isMobileLayout()) {
-      revealMobileResultsAfterCalc();
-    } else if (isLaptopLayout()) {
-      openResultsDrawer();
-    } else {
-      syncResultsAsideVisibility();
-      fitSketchAfterLayoutChange();
-    }
+    revealResultsAfterCalc();
   });
 }
 
@@ -1187,6 +1223,7 @@ function setupSketchEditor() {
     },
     onGeometrySettle: async ({ reason } = {}) => {
       const ok = await runCalculation({ silent: true });
+      if (ok) revealResultsAfterCalc();
       // После «Готово» в проёмах сразу показать обновлённую развёртку стены
       if (ok && reason === 'openings-done') {
         setSchemeView('walls');
@@ -1416,6 +1453,7 @@ function applyResultsToUi() {
   updateStatCards();
   updateResultsPreview();
   flashCalcReadyStatus();
+  if (state.hasResults) revealResultsAfterCalc();
 }
 
 function flashCalcReadyStatus() {
@@ -1912,13 +1950,16 @@ function setupMobileActions() {
     closeMobileSidebar();
     scrollMobileResultsIntoView();
   });
-  $('openResultsDrawerBtn')?.addEventListener('click', () => openResultsDrawer());
+  $('openResultsDrawerBtn')?.addEventListener('click', () => {
+    if (document.body.classList.contains('results-sheet-open')) closeResultsDrawer();
+    else openResultsDrawer();
+  });
   $('resultsDrawerCloseBtn')?.addEventListener('click', () => closeResultsDrawer());
   $('resultsDrawerBackdrop')?.addEventListener('click', () => closeResultsDrawer());
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') {
       closeMobileSidebar();
-      if (document.body.classList.contains('results-drawer-open')) closeResultsDrawer();
+      if (document.body.classList.contains('results-sheet-open')) closeResultsDrawer();
     }
   });
   window.matchMedia(MOBILE_MQ).addEventListener('change', () => {

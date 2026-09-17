@@ -6759,52 +6759,72 @@ body.theme-dark .entry-block.is-open .entry-card {
 
   .workspace-canvas {
     min-width: 0;
-  }
-
-  /* Results as right drawer — not in grid flow */
-  .workspace-results {
-    position: fixed;
-    top: 0;
-    right: 0;
-    bottom: 0;
-    width: min(340px, 92vw);
-    max-width: 340px;
-    z-index: 95;
     display: flex;
     flex-direction: column;
     min-height: 0;
-    height: 100%;
-    background: #fff;
-    border: none;
-    border-left: 1px solid rgba(1, 100, 79, 0.14);
-    border-radius: 0;
-    overflow: hidden;
-    transform: translateX(105%);
-    transition: transform 0.28s ease;
-    box-shadow: -8px 0 28px rgba(17, 24, 39, 0.14);
   }
 
-  body.results-drawer-open .workspace-results:not([hidden]) {
-    transform: translateX(0);
+  .workspace-canvas__secondary {
+    display: flex;
+    flex-direction: column;
+    flex-shrink: 0;
+    gap: 0;
+    max-height: none;
+    overflow: visible;
+  }
+
+  /* Bottom sheet under stats — slides up/down */
+  .workspace-results {
+    position: relative;
+    width: 100%;
+    max-width: none;
+    height: auto;
+    max-height: 0;
+    opacity: 0;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    background: #fff;
+    border: 1px solid rgba(1, 100, 79, 0.12);
+    border-radius: 12px;
+    margin-top: 0;
+    transform: translateY(12px);
+    transition:
+      max-height 0.4s cubic-bezier(0.22, 1, 0.36, 1),
+      opacity 0.28s ease,
+      transform 0.4s cubic-bezier(0.22, 1, 0.36, 1),
+      margin-top 0.3s ease,
+      padding 0.3s ease;
+    box-shadow: none;
+    z-index: 5;
+    pointer-events: none;
+  }
+
+  .workspace-results:not([hidden]) {
+    display: flex;
+  }
+
+  body.results-sheet-open .workspace-results:not([hidden]) {
+    max-height: min(42vh, 380px);
+    opacity: 1;
+    transform: translateY(0);
+    margin-top: 8px;
+    pointer-events: auto;
+    box-shadow: 0 6px 20px rgba(17, 24, 39, 0.08);
   }
 
   .workspace-results[hidden] {
     display: none !important;
   }
 
-  .results-drawer-backdrop {
-    display: none;
-    position: fixed;
-    inset: 0;
-    z-index: 94;
-    background: rgba(17, 24, 39, 0.35);
-    border: none;
-    padding: 0;
-    cursor: pointer;
+  body.results-sheet-open .workspace-results .workspace-results__scroll {
+    overflow: auto;
+    max-height: min(42vh, 380px);
+    padding: 10px 12px;
   }
 
-  body.results-drawer-open .results-drawer-backdrop {
-    display: block;
+  .results-drawer-backdrop {
+    display: none !important;
   }
 
   .workspace-results__close {
@@ -6848,32 +6868,65 @@ body.theme-dark .entry-block.is-open .entry-card {
 
   body.has-results-aside .workspace {
     grid-template-columns: 280px minmax(0, 1fr) 280px;
+    grid-template-rows: minmax(0, 1fr) auto;
   }
 
   .workspace-sidebar {
     width: auto;
     max-width: none;
+    grid-column: 1;
+    grid-row: 1 / -1;
   }
 
   .workspace-canvas {
     min-width: 0;
+    grid-column: 2;
+    grid-row: 1 / -1;
+    display: flex;
+    flex-direction: column;
   }
 
-  .workspace-results {
+  body.has-results-aside .workspace-canvas {
+    display: contents;
+  }
+
+  body.has-results-aside .scheme-card {
+    grid-column: 2;
+    grid-row: 1;
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  body.has-results-aside .workspace-canvas__secondary {
+    display: contents;
+  }
+
+  body.has-results-aside .workspace-stats {
+    grid-column: 2;
+    grid-row: 2;
+  }
+
+  body.has-results-aside .workspace-results {
+    grid-column: 3;
+    grid-row: 1 / -1;
     width: 280px;
     max-width: 280px;
+    max-height: none;
+    height: 100%;
+    opacity: 1;
+    transform: none;
+    margin: 0;
+    pointer-events: auto;
     display: flex;
     flex-direction: column;
     min-height: 0;
-    height: 100%;
-    flex-shrink: 0;
     background: #fff;
     border: 1px solid rgba(1, 100, 79, 0.12);
     border-radius: 14px;
     overflow: hidden;
     position: static;
-    transform: none;
     box-shadow: none;
+    transition: none;
   }
 
   .workspace-results[hidden] {
@@ -6889,6 +6942,10 @@ body.theme-dark .entry-block.is-open .entry-card {
   }
 
   .workspace-results__close {
+    display: none !important;
+  }
+
+  #openResultsDrawerBtn {
     display: none !important;
   }
 }
