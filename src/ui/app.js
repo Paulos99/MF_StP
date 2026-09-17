@@ -16,6 +16,8 @@ import { GuidedTour } from './guided-tour.js';
 
 const AUTO_RECALC_MS = 400;
 const MOBILE_MQ = '(max-width: 899px)';
+const LAPTOP_MQ = '(min-width: 900px) and (max-width: 1399px)';
+const WIDE_MQ = '(min-width: 1400px)';
 
 /** When true, mode switches from demo cursor must not kill the tour */
 let onboardingDemoActive = false;
@@ -103,6 +105,80 @@ function isMobileLayout() {
   return window.matchMedia(MOBILE_MQ).matches;
 }
 
+function isLaptopLayout() {
+  return window.matchMedia(LAPTOP_MQ).matches;
+}
+
+function isWideLayout() {
+  return window.matchMedia(WIDE_MQ).matches;
+}
+
+function fitSketchAfterLayoutChange() {
+  requestAnimationFrame(() => {
+    sketchEditor?.fitToScreen?.();
+  });
+}
+
+function openResultsDrawer() {
+  const aside = $('resultsAside');
+  if (!aside || !state.hasResults) return;
+  aside.hidden = false;
+  document.body.classList.add('results-drawer-open');
+  const backdrop = $('resultsDrawerBackdrop');
+  if (backdrop) backdrop.hidden = false;
+  const closeBtn = $('resultsDrawerCloseBtn');
+  if (closeBtn) closeBtn.hidden = !isLaptopLayout();
+  fitSketchAfterLayoutChange();
+}
+
+function closeResultsDrawer() {
+  document.body.classList.remove('results-drawer-open');
+  const backdrop = $('resultsDrawerBackdrop');
+  if (backdrop) backdrop.hidden = true;
+  const closeBtn = $('resultsDrawerCloseBtn');
+  if (closeBtn) closeBtn.hidden = true;
+  // On laptop keep aside in DOM but closed; hide if no results
+  const aside = $('resultsAside');
+  if (aside && isLaptopLayout() && !state.hasResults) aside.hidden = true;
+  fitSketchAfterLayoutChange();
+}
+
+function syncResultsAsideVisibility() {
+  const aside = $('resultsAside');
+  const openBtn = $('openResultsDrawerBtn');
+  const ready = !!state.hasResults;
+  const laptop = isLaptopLayout();
+  const wide = isWideLayout();
+  const mobile = isMobileLayout();
+
+  document.body.classList.toggle('has-results-aside', ready && wide);
+
+  if (openBtn) {
+    openBtn.hidden = !(ready && laptop);
+  }
+
+  if (!aside) return;
+
+  if (mobile) {
+    closeResultsDrawer();
+    aside.hidden = !ready;
+    return;
+  }
+
+  if (wide) {
+    closeResultsDrawer();
+    aside.hidden = !ready;
+    return;
+  }
+
+  if (laptop) {
+    aside.hidden = !ready;
+    if (!ready) closeResultsDrawer();
+    const closeBtn = $('resultsDrawerCloseBtn');
+    if (closeBtn) closeBtn.hidden = !document.body.classList.contains('results-drawer-open');
+  }
+}
+
 function getNoModeHint() {
   return isMobileLayout()
     ? 'Нажмите «Ввести параметры расчёта» внизу и выберите способ'
@@ -125,10 +201,13 @@ function syncMobileParamsBtn() {
   const btn = $('mobileParamsBtn');
   if (!btn) return;
   btn.textContent = state.hasResults || state.inputMode
-    ? 'Изменить параметры'
-    : 'Ввести параметры расчёта';
+    ? 'Параметры'
+    : 'Ввести параметры';
   const resultsBtn = $('mobileResultsBtn');
-  if (resultsBtn) resultsBtn.hidden = !state.hasResults;
+  if (resultsBtn) {
+    resultsBtn.hidden = !state.hasResults;
+    resultsBtn.textContent = 'Результаты';
+  }
 }
 
 function closeMobileSidebar() {
@@ -426,12 +505,10 @@ function syncChromeUi() {
   document.querySelector('.workspace-section--panel-info')?.toggleAttribute('hidden', true);
   $('projectLoadedBanner')?.classList.toggle('is-compact', true);
 
-  const resultsAside = $('resultsAside');
   const stats = document.querySelector('.workspace-stats');
 
-  // Правая колонка всегда на месте
-  if (resultsAside) resultsAside.hidden = false;
   if (stats) stats.classList.toggle('is-idle', !ready);
+  syncResultsAsideVisibility();
 
   if ($('downloadBtn')) $('downloadBtn').disabled = !ready;
   if ($('shareBtnSecondary')) $('shareBtnSecondary').disabled = !ready;
@@ -461,7 +538,6 @@ function syncChromeUi() {
   );
 
   document.querySelector('.theme-toggle__label')?.toggleAttribute('hidden', !mode);
-  document.body.classList.add('has-results-aside');
   syncCalcButtons();
 }
 
@@ -1056,8 +1132,14 @@ function setupFormListeners() {
 
   $('calculateBtn')?.addEventListener('click', async () => {
     const ok = await runCalculation();
-    if (ok && isMobileLayout()) {
+    if (!ok) return;
+    if (isMobileLayout()) {
       revealMobileResultsAfterCalc();
+    } else if (isLaptopLayout()) {
+      openResultsDrawer();
+    } else {
+      syncResultsAsideVisibility();
+      fitSketchAfterLayoutChange();
     }
   });
 }
@@ -1830,8 +1912,14 @@ function setupMobileActions() {
     closeMobileSidebar();
     scrollMobileResultsIntoView();
   });
+  $('openResultsDrawerBtn')?.addEventListener('click', () => openResultsDrawer());
+  $('resultsDrawerCloseBtn')?.addEventListener('click', () => closeResultsDrawer());
+  $('resultsDrawerBackdrop')?.addEventListener('click', () => closeResultsDrawer());
   document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape') closeMobileSidebar();
+    if (e.key === 'Escape') {
+      closeMobileSidebar();
+      if (document.body.classList.contains('results-drawer-open')) closeResultsDrawer();
+    }
   });
   window.matchMedia(MOBILE_MQ).addEventListener('change', () => {
     if (!isMobileLayout()) {
@@ -1840,8 +1928,22 @@ function setupMobileActions() {
     } else if (state.inputMode === 'draw' && !onboardingDemoActive) {
       enterMobileSketchStep();
     }
+    syncResultsAsideVisibility();
     updateSchemeModeUi();
     syncCalcButtons();
+    fitSketchAfterLayoutChange();
+  });
+  window.matchMedia(LAPTOP_MQ).addEventListener('change', () => {
+    syncResultsAsideVisibility();
+    if (!isLaptopLayout()) closeResultsDrawer();
+    fitSketchAfterLayoutChange();
+  });
+  window.matchMedia(WIDE_MQ).addEventListener('change', () => {
+    syncResultsAsideVisibility();
+    fitSketchAfterLayoutChange();
+  });
+  window.addEventListener('resize', () => {
+    syncResultsAsideVisibility();
   });
 
   $('sketchMobileEditBtn')?.addEventListener('click', () => {

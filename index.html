@@ -228,6 +228,7 @@
                 <button type="button" class="tab-btn" data-tab="walls" role="tab" aria-selected="false" hidden>Стены</button>
               </div>
               <div class="scheme-header__right">
+                <button type="button" class="btn btn-secondary btn-sm scheme-results-btn" id="openResultsDrawerBtn" hidden>Результаты</button>
                 <div class="plan-overlay-toggles" id="planOverlayToggles">
                   <label class="canvas-checkbox"><input type="checkbox" id="showNumbers" checked /> №</label>
                   <label class="canvas-checkbox" id="showFrameLabel"><input type="checkbox" id="showFrame" /> Каркас</label>
@@ -423,6 +424,7 @@
             <div class="results-card card is-expanded">
               <div class="results-header">
                 <h2>Результаты</h2>
+                <button type="button" class="btn-link workspace-results__close" id="resultsDrawerCloseBtn" hidden aria-label="Закрыть">Закрыть</button>
                 <button type="button" class="btn-share-compact" id="shareBtn" hidden aria-hidden="true"></button>
                 <button type="button" class="btn-link results-collapse-btn" id="resultsCollapseBtn" hidden></button>
                 <button type="button" class="btn-link secondary-results-toggle" id="resultsExpandBtn" hidden></button>
@@ -450,6 +452,8 @@
         </aside>
       </div>
     </main>
+
+    <button type="button" id="resultsDrawerBackdrop" class="results-drawer-backdrop" hidden aria-label="Закрыть результаты"></button>
 
     <footer class="app-footer mobile-toolbar">
       <div class="app-footer__inner">
