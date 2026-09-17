@@ -7462,7 +7462,7 @@ body.theme-dark .results-drawer-backdrop {
         order: 3;
         width: 100%;
         max-width: none;
-        margin: 0 0 4px;
+        margin: 8px 0 4px;
         border-radius: 12px;
         border: 1px solid rgba(1, 100, 79, 0.12);
         background: var(--bg-card, #fff);
@@ -7471,6 +7471,12 @@ body.theme-dark .results-drawer-backdrop {
         display: flex;
         flex-direction: column;
         min-height: 0;
+        max-height: none;
+        opacity: 1;
+        transform: none;
+        pointer-events: auto;
+        box-shadow: none;
+        transition: none;
     }
 
     .workspace-results__scroll {
