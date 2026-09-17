@@ -228,7 +228,6 @@
                 <button type="button" class="tab-btn" data-tab="walls" role="tab" aria-selected="false" hidden>Стены</button>
               </div>
               <div class="scheme-header__right">
-                <button type="button" class="btn btn-secondary btn-sm scheme-results-btn" id="openResultsDrawerBtn" hidden>Результаты</button>
                 <div class="plan-overlay-toggles" id="planOverlayToggles">
                   <label class="canvas-checkbox"><input type="checkbox" id="showNumbers" checked /> №</label>
                   <label class="canvas-checkbox" id="showFrameLabel"><input type="checkbox" id="showFrame" /> Каркас</label>
@@ -411,6 +410,9 @@
                 <div class="stat-label">Стоимость панелей</div>
                 <div class="stat-value" id="totalCost" data-raw="0">0 ₽</div>
               </div>
+              <button type="button" class="stat-card stat-card-button stat-card-button--results" id="openResultsDrawerBtn" hidden>
+                <span class="stat-card-button__text">Результаты</span>
+              </button>
               <a class="stat-card stat-card-button" id="buyMultiframeBtn" href="https://stp.store/catalog/zvukoizolyatsiya-pomeshcheniy/zvukoizolyatsiya-dlya-potolka/zvukoizolyatsionnaya-panel-dlya-potolka-stp-multiframe/" target="_blank" rel="noopener noreferrer">
                 <img src="./buy.png" alt="" class="stat-card-button__icon" width="22" height="22" onerror="this.style.display='none'">
                 <span class="stat-card-button__text">Купить MultiFRAME</span>

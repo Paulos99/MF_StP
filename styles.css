@@ -6828,6 +6828,10 @@ body.theme-dark .entry-block.is-open .entry-card {
     display: none;
   }
 
+  .workspace-stats .stat-card-button--results .stat-card-button__text {
+    display: inline;
+  }
+
   .app-main {
     padding-left: 10px;
     padding-right: 10px;
@@ -6911,9 +6915,40 @@ body.theme-dark .entry-block.is-open .entry-card {
   padding: 4px 8px;
 }
 
-.scheme-results-btn {
-  flex-shrink: 0;
-  white-space: nowrap;
+.workspace-stats .stat-card-button--results {
+  background: #fff;
+  color: var(--accent-color);
+  border: 1.5px solid var(--accent-color);
+  cursor: pointer;
+  font: inherit;
+}
+
+.workspace-stats .stat-card-button--results:hover {
+  background: rgba(1, 100, 79, 0.08);
+}
+
+.workspace-stats .stat-card-button--results .stat-card-button__text {
+  display: inline;
+  font-weight: 700;
+}
+
+@media (min-width: 900px) and (max-width: 1399px) {
+  .workspace-stats .stat-card-button--results .stat-card-button__text {
+    display: inline;
+  }
+}
+
+/* Hide results opener outside laptop drawer mode */
+@media (min-width: 1400px) {
+  #openResultsDrawerBtn {
+    display: none !important;
+  }
+}
+
+@media (max-width: 899px) {
+  #openResultsDrawerBtn {
+    display: none !important;
+  }
 }
 
 .results-drawer-backdrop {
@@ -7834,11 +7869,6 @@ body.theme-dark .results-drawer-backdrop {
 @media (min-width: 900px) and (max-width: 1399px) {
   .scheme-header__right .theme-toggle__label {
     display: none;
-  }
-
-  .scheme-results-btn {
-    min-height: 36px;
-    padding: 6px 12px;
   }
 }
 
