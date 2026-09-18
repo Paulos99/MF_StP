@@ -1860,15 +1860,15 @@ function buildProjectState() {
   });
 }
 
-function showProjectLoadedBanner() {
+function showProjectLoadedBanner(message = 'Проект из ссылки загружен') {
   const banner = $('projectLoadedBanner');
   if (!banner) return;
   banner.hidden = false;
-  banner.textContent = 'Проект из ссылки загружен';
+  banner.textContent = message;
   clearTimeout(showProjectLoadedBanner._t);
   showProjectLoadedBanner._t = setTimeout(() => {
     banner.hidden = true;
-  }, 3500);
+  }, 4200);
 }
 
 async function handleShare() {
@@ -2001,22 +2001,68 @@ function setupMobileActions() {
 
 function loadFromUrl() {
   const data = readShareFromUrl();
-  if (!data?.room) return;
-  const room = Room.fromJSON(data.room);
-  applyRoomToForm(room);
-  applyOptionsToForm(data.options);
-  if (data.inputMode) {
-    setInputMode(data.inputMode, { preserveGeometry: true });
+  if (data?.room) {
+    const room = Room.fromJSON(data.room);
+    applyRoomToForm(room);
+    applyOptionsToForm(data.options);
+    if (data.inputMode) {
+      setInputMode(data.inputMode, { preserveGeometry: true });
+    }
+    if (data.areaValue && els.form.areaOnlyInput) {
+      els.form.areaOnlyInput.value = data.areaValue;
+      state.areaValue = data.areaValue;
+    }
+    if (data.areaWalls?.length) {
+      state.areaWalls = data.areaWalls;
+      renderAreaWallsList();
+    }
+    showProjectLoadedBanner();
+    return;
   }
-  if (data.areaValue && els.form.areaOnlyInput) {
-    els.form.areaOnlyInput.value = data.areaValue;
-    state.areaValue = data.areaValue;
+
+  applyQueryHandoff();
+}
+
+/**
+ * Deep-link from Проблемомер / marketing:
+ * ?area=18&mode=area&walls=0&source=problemomer → ceiling-only area calc.
+ */
+function applyQueryHandoff() {
+  const params = new URLSearchParams(window.location.search);
+  const area = parseFloat(params.get('area') || '');
+  if (!(area > 0) || Number.isNaN(area)) return;
+
+  const rawMode = params.get('mode');
+  const mode = rawMode === 'dims' || rawMode === 'draw' ? rawMode : 'area';
+  const source = params.get('source') || '';
+  const ceilingOnly =
+    params.get('walls') === '0' ||
+    params.get('surfaces') === 'ceiling' ||
+    source === 'problemomer';
+
+  setInputMode(mode, { preserveGeometry: true });
+
+  if (mode === 'area') {
+    if (els.form.areaOnlyInput) {
+      els.form.areaOnlyInput.value = area.toFixed(2);
+    }
+    state.areaValue = area;
+    if (ceilingOnly) {
+      state.areaWalls = [];
+      renderAreaWallsList();
+    }
+    if (els.form.calcCeiling) els.form.calcCeiling.checked = true;
   }
-  if (data.areaWalls?.length) {
-    state.areaWalls = data.areaWalls;
-    renderAreaWallsList();
-  }
-  showProjectLoadedBanner();
+
+  const banner =
+    source === 'problemomer'
+      ? `Площадь потолка ${area.toFixed(1)} м² из Проблемомера`
+      : `Площадь ${area.toFixed(1)} м² из ссылки`;
+  showProjectLoadedBanner(banner);
+
+  window.setTimeout(() => {
+    void runCalculation({ silent: true });
+  }, 0);
 }
 
 function initTheme() {
