@@ -6805,22 +6805,55 @@ body.theme-dark .entry-block.is-open .entry-card {
   }
 
   body.results-sheet-open .workspace-results:not([hidden]) {
-    max-height: min(42vh, 380px);
+    max-height: min(70vh, 640px);
     opacity: 1;
     transform: translateY(0);
     margin-top: 8px;
     pointer-events: auto;
     box-shadow: 0 6px 20px rgba(17, 24, 39, 0.08);
+    overflow: hidden;
   }
 
   .workspace-results[hidden] {
     display: none !important;
   }
 
+  /* One scroller: the whole __scroll block, not a tiny nested preview */
   body.results-sheet-open .workspace-results .workspace-results__scroll {
-    overflow: auto;
-    max-height: min(42vh, 380px);
+    flex: 1 1 auto;
+    min-height: 0;
+    max-height: none;
+    overflow-x: hidden;
+    overflow-y: auto;
     padding: 10px 12px;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  body.results-sheet-open .workspace-results .results-card,
+  body.results-sheet-open .workspace-results .results-card.is-expanded {
+    flex: none;
+    max-height: none;
+    height: auto;
+    overflow: visible;
+    display: block;
+    gap: 0;
+    padding: 0;
+  }
+
+  body.results-sheet-open .workspace-results .results-preview,
+  body.results-sheet-open .workspace-results .results-card.is-expanded .results-preview {
+    flex: none;
+    max-height: none !important;
+    overflow: visible;
+    height: auto;
+  }
+
+  body.results-sheet-open .workspace-results .workspace-results__actions {
+    flex-shrink: 0;
+    margin-top: 0;
+    padding: 10px 12px 12px;
+    border-top: 1px solid rgba(1, 100, 79, 0.08);
+    background: #fff;
   }
 
   .results-drawer-backdrop {
@@ -6828,7 +6861,7 @@ body.theme-dark .entry-block.is-open .entry-card {
   }
 
   .workspace-results__close {
-    display: inline-flex !important;
+    display: none !important;
   }
 
   .workspace-stats {
@@ -6935,21 +6968,21 @@ body.theme-dark .entry-block.is-open .entry-card {
     flex: 1 1 auto;
     min-height: 0;
     max-height: none;
-    overflow: hidden;
-    display: flex;
-    flex-direction: column;
+    overflow-x: hidden;
+    overflow-y: auto;
+    display: block;
+    -webkit-overflow-scrolling: touch;
   }
 
-  /* Override secondary collapse cap (36vh/320px) — fill the tall column */
+  /* Override secondary collapse cap — content grows, __scroll scrolls */
   body.has-results-aside .workspace-results .results-card,
   body.has-results-aside .workspace-results .results-card.is-expanded {
-    flex: 1 1 auto;
+    flex: none;
     min-height: 0;
     max-height: none;
     height: auto;
-    overflow: hidden;
-    display: flex;
-    flex-direction: column;
+    overflow: visible;
+    display: block;
     gap: 0;
     padding: 0;
     margin: 0;
@@ -6957,10 +6990,11 @@ body.theme-dark .entry-block.is-open .entry-card {
 
   body.has-results-aside .workspace-results .results-preview,
   body.has-results-aside .workspace-results .results-card.is-expanded .results-preview {
-    flex: 1 1 auto;
+    flex: none;
     min-height: 0;
     max-height: none !important;
-    overflow: auto;
+    overflow: visible;
+    height: auto;
   }
 
   .workspace-results[hidden] {
@@ -6987,7 +7021,8 @@ body.theme-dark .entry-block.is-open .entry-card {
 .workspace-results__scroll {
   flex: 1;
   min-height: 0;
-  overflow: hidden;
+  overflow-x: hidden;
+  overflow-y: auto;
   padding: 12px;
   display: flex;
   flex-direction: column;
@@ -7079,8 +7114,10 @@ body.theme-dark .entry-block.is-open .entry-card {
   flex-direction: column;
   gap: 8px;
   flex-shrink: 0;
-  margin-top: auto;
-  padding-top: 4px;
+  margin-top: 0;
+  padding: 10px 12px 12px;
+  border-top: 1px solid rgba(1, 100, 79, 0.08);
+  background: #fff;
 }
 
 .workspace-results__btn {
@@ -7093,17 +7130,17 @@ body.theme-dark .entry-block.is-open .entry-card {
 
 .workspace-results .results-card,
 .workspace-results .results-card.is-expanded {
-  flex: 1;
+  flex: none;
   min-height: 0;
   max-height: none;
-  display: flex;
-  flex-direction: column;
+  display: block;
   margin: 0;
   padding: 0;
   gap: 0;
   box-shadow: none;
   border: 1px solid rgba(1, 100, 79, 0.1);
-  overflow: hidden;
+  overflow: visible;
+  border-radius: 12px;
 }
 
 .workspace-results .results-header {
@@ -7119,10 +7156,12 @@ body.theme-dark .entry-block.is-open .entry-card {
   font-size: 1rem;
 }
 
-.workspace-results .results-preview {
-  flex: 1;
+.workspace-results .results-preview,
+.workspace-results .results-card.is-expanded .results-preview {
+  flex: none;
   max-height: none !important;
-  overflow: auto;
+  overflow: visible;
+  height: auto;
   padding: 0 12px 12px;
 }
 
