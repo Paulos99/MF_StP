@@ -6848,8 +6848,8 @@ body.theme-dark .entry-block.is-open .entry-card {
     display: none;
   }
 
-  .workspace-stats .stat-card-button--results .stat-card-button__text {
-    display: inline;
+  .results-sheet-toggle {
+    display: flex;
   }
 
   .app-main {

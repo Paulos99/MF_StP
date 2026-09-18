@@ -159,10 +159,7 @@ function closeResultsDrawer() {
 function syncResultsToggleLabel(open) {
   const openBtn = $('openResultsDrawerBtn');
   if (!openBtn) return;
-  const text = openBtn.querySelector('.stat-card-button__text');
-  const label = open ? 'Скрыть' : 'Результаты';
-  if (text) text.textContent = label;
-  else openBtn.textContent = label;
+  openBtn.textContent = open ? 'Скрыть' : 'Результаты';
   openBtn.setAttribute('aria-expanded', open ? 'true' : 'false');
 }
 

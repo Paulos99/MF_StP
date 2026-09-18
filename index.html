@@ -410,14 +410,15 @@
                 <div class="stat-label">Стоимость панелей</div>
                 <div class="stat-value" id="totalCost" data-raw="0">0 ₽</div>
               </div>
-              <button type="button" class="stat-card stat-card-button stat-card-button--results" id="openResultsDrawerBtn" hidden>
-                <span class="stat-card-button__text">Результаты</span>
-              </button>
               <a class="stat-card stat-card-button" id="buyMultiframeBtn" href="https://stp.store/catalog/zvukoizolyatsiya-pomeshcheniy/zvukoizolyatsiya-dlya-potolka/zvukoizolyatsionnaya-panel-dlya-potolka-stp-multiframe/" target="_blank" rel="noopener noreferrer">
                 <img src="./buy.png" alt="" class="stat-card-button__icon" width="22" height="22" onerror="this.style.display='none'">
                 <span class="stat-card-button__text">Купить MultiFRAME</span>
               </a>
             </div>
+
+            <button type="button" class="results-sheet-toggle" id="openResultsDrawerBtn" hidden aria-expanded="false">
+              Результаты
+            </button>
 
             <aside class="workspace-results" id="resultsAside" hidden>
               <div class="workspace-results__scroll">
