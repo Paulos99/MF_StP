@@ -96,8 +96,13 @@ export class SketchOnboarding {
     return this._demoPlayer;
   }
 
+  shouldAutoStart() {
+    return !readDone();
+  }
+
   start(force = false) {
-    if (!force) return;
+    if (!force && !this.shouldAutoStart()) return;
+    if (this.active) return;
     this.step = 0;
     this.active = true;
     this.overlay.hidden = false;

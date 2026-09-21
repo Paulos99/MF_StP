@@ -255,15 +255,19 @@ export function resolveAdaptiveDrawStep({
   return nearMeter ? DRAW_GRID_STEP : FINE_GRID_STEP;
 }
 
-/** Should the canvas gently zoom in for fine placement? */
+/**
+ * Should the canvas gently zoom in for fine placement?
+ * While zoom is active, stay zoomed until the cursor moves fast again —
+ * ignore brief meter-line magnet flips (they caused bounce near grid lines).
+ */
 export function shouldFineZoom({
   inFineSnap = false,
   velocity = Infinity,
   dwellMs = 0,
   zoomActive = false,
 } = {}) {
-  if (!inFineSnap) return false;
   if (zoomActive) return velocity <= FINE_ZOOM_EXIT_VEL;
+  if (!inFineSnap) return false;
   return velocity <= FINE_ZOOM_ENTER_VEL && dwellMs >= FINE_ZOOM_DWELL_MS;
 }
 

@@ -12,7 +12,6 @@ import { SketchEditor } from '../editor/sketch-editor.js';
 import { validateRoomForm } from '../editor/opening-tool.js';
 import { buildShareUrl, readShareFromUrl, buildProjectPayload } from '../export/share-link.js';
 import { setupAppOnboarding, dismissAppTourIfActive } from './app-onboarding.js';
-import { GuidedTour } from './guided-tour.js';
 
 const AUTO_RECALC_MS = 400;
 const MOBILE_MQ = '(max-width: 899px)';
@@ -997,35 +996,12 @@ function setInputMode(mode, { confirmSwitch = false, preserveGeometry = false } 
 
   if (prev !== next) scheduleAutoRecalc();
 
-  if (next === 'draw' && prev !== 'draw') {
-    maybeStartSketchTour();
-  }
-
   // Phone: dedicated fullscreen sketch step (not a short inline card)
   if (next === 'draw' && isMobileLayout() && !onboardingDemoActive) {
     enterMobileSketchStep();
   } else if (prev === 'draw' && next !== 'draw') {
     exitMobileSketchStep({ markSummary: false });
   }
-}
-
-function maybeStartSketchTour() {
-  if (onboardingDemoActive) return;
-  const onboarding = sketchEditor?.onboarding;
-  if (!onboarding?.shouldAutoStart?.()) return;
-
-  const tryStart = (attempt = 0) => {
-    if (onboardingDemoActive) return;
-    if (state.inputMode !== 'draw') return;
-    // Don't overlap the app cinematic tour
-    if (GuidedTour.getShared().isActive()) {
-      if (attempt < 12) setTimeout(() => tryStart(attempt + 1), 250);
-      return;
-    }
-    onboarding.start(false);
-  };
-
-  setTimeout(() => tryStart(0), 420);
 }
 
 function setupModeToggles() {
