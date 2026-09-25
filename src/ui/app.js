@@ -26,6 +26,8 @@ const state = {
   areaValue: null,
   areaWalls: [],
   hasResults: false,
+  /** Phone: смета/результаты только после явного «Готово — к результатам» */
+  mobileResultsUnlocked: false,
   resultsStale: false,
   room: Room.createDefault(),
   ceilingCalc: null,
@@ -104,6 +106,11 @@ function isMobileLayout() {
   return window.matchMedia(MOBILE_MQ).matches;
 }
 
+/** Смета/цифры на телефоне — только после «Готово — к результатам» */
+function resultsUnlockedForUi() {
+  return !!state.hasResults && (!isMobileLayout() || state.mobileResultsUnlocked);
+}
+
 function isLaptopLayout() {
   return window.matchMedia(LAPTOP_MQ).matches;
 }
@@ -164,6 +171,11 @@ function syncResultsToggleLabel(open) {
 
 function revealResultsAfterCalc() {
   if (isMobileLayout()) {
+    if (!state.mobileResultsUnlocked) {
+      // Пока не подтвердили параметры — держим блок «что считать / монтаж»
+      openMobileParamsAfterSketch();
+      return;
+    }
     revealMobileResultsAfterCalc();
     return;
   }
@@ -196,7 +208,7 @@ function syncResultsAsideVisibility() {
 
   if (mobile) {
     closeResultsDrawer();
-    aside.hidden = !ready;
+    aside.hidden = !resultsUnlockedForUi();
     return;
   }
 
@@ -244,7 +256,7 @@ function syncMobileParamsBtn() {
     : 'Ввести параметры';
   const resultsBtn = $('mobileResultsBtn');
   if (resultsBtn) {
-    resultsBtn.hidden = !state.hasResults;
+    resultsBtn.hidden = !resultsUnlockedForUi();
     resultsBtn.textContent = 'Результаты';
   }
 }
@@ -298,10 +310,12 @@ function openMobileParamsAfterSketch() {
       shared.querySelector('.shared-reveal__collapse')?.removeAttribute('inert');
       $('sharedCalcOptions')?.setAttribute('aria-hidden', 'false');
     }
+    // После схемы/размеров — сначала стены и тип монтажа, не высота и не смета
     const target =
-      $('drawHeight')?.closest('.form-group')
+      (state.inputMode !== 'area' && $('sharedCalcOptions'))
+      || $('areaWallsBlock')
+      || $('drawHeight')?.closest('.form-group')
       || $('drawCalcCard')
-      || $('sharedCalcOptions')
       || document.querySelector('.sidebar-calc-wrap');
     try {
       target?.scrollIntoView?.({ block: 'start', behavior: 'smooth' });
@@ -452,7 +466,7 @@ function animateStatValue(el, toValue, formatter, { duration = 520 } = {}) {
 
 function updateStatCards() {
   const bom = state.bom;
-  if (!state.hasResults || !bom?.total) {
+  if (!resultsUnlockedForUi() || !bom?.total) {
     animateStatValue($('totalPanels'), 0, formatStatPanels, { duration: 280 });
     animateStatValue($('coverageArea'), 0, formatStatArea, { duration: 280 });
     animateStatValue($('totalCost'), 0, formatStatCost, { duration: 280 });
@@ -523,11 +537,11 @@ function updateLayoutMode() {
   const workspace = $('appLayout');
   if (!workspace) return;
 
-  const uiState = !state.hasResults ? 'empty' : 'ready';
+  const uiState = !resultsUnlockedForUi() ? 'empty' : 'ready';
   workspace.setAttribute('data-state', uiState);
   workspace.setAttribute('data-view', state.activeView || 'plan');
 
-  const downloadDisabled = !state.hasResults;
+  const downloadDisabled = !resultsUnlockedForUi();
   if ($('downloadBtn')) $('downloadBtn').disabled = downloadDisabled;
 
   syncCalcButtons();
@@ -537,7 +551,7 @@ function updateLayoutMode() {
 
 /** Спрятать шум: дубли, детали, кнопки — пока нет актуального расчёта */
 function syncChromeUi() {
-  const ready = !!state.hasResults;
+  const ready = resultsUnlockedForUi();
   const mode = state.inputMode;
   const drawReady = mode !== 'draw' || (state.room.vertices?.length >= 3);
 
@@ -582,6 +596,7 @@ function syncChromeUi() {
 
 function clearResultsUi(message = '') {
   state.hasResults = false;
+  state.mobileResultsUnlocked = false;
   state.bom = null;
   state.ceilingResult = null;
   state.wallResult = null;
@@ -1002,6 +1017,17 @@ function setInputMode(mode, { confirmSwitch = false, preserveGeometry = false } 
   } else if (prev === 'draw' && next !== 'draw') {
     exitMobileSketchStep({ markSummary: false });
   }
+
+  // Phone: после выбора способа сразу к блоку стен/монтажа (не к смете)
+  if (
+    isMobileLayout()
+    && next
+    && next !== 'draw'
+    && !onboardingDemoActive
+    && !state.mobileResultsUnlocked
+  ) {
+    requestAnimationFrame(() => openMobileParamsAfterSketch());
+  }
 }
 
 function setupModeToggles() {
@@ -1147,6 +1173,7 @@ function setupFormListeners() {
   });
 
   $('calculateBtn')?.addEventListener('click', async () => {
+    if (isMobileLayout()) state.mobileResultsUnlocked = true;
     const ok = await runCalculation();
     if (!ok) return;
     revealResultsAfterCalc();
@@ -1196,6 +1223,12 @@ function setupSketchEditor() {
     },
     onGeometrySettle: async ({ reason } = {}) => {
       const ok = await runCalculation({ silent: true });
+      if (!ok) return;
+      // Phone: после контура/проёмов — параметры (стены/монтаж), не смета
+      if (isMobileLayout() && !state.mobileResultsUnlocked && reason !== 'openings-done') {
+        openMobileParamsAfterSketch();
+        return;
+      }
       if (ok) revealResultsAfterCalc();
       // После «Готово» в проёмах сразу показать обновлённую развёртку стены
       if (ok && reason === 'openings-done') {
@@ -1917,9 +1950,13 @@ function setupMobileActions() {
   });
   $('mobileSidebarClose')?.addEventListener('click', () => {
     closeMobileSidebar();
-    if (state.hasResults) scrollMobileResultsIntoView();
+    if (resultsUnlockedForUi()) scrollMobileResultsIntoView();
   });
   $('mobileResultsBtn')?.addEventListener('click', () => {
+    if (!resultsUnlockedForUi()) {
+      openMobileParamsAfterSketch();
+      return;
+    }
     closeMobileSidebar();
     scrollMobileResultsIntoView();
   });
@@ -2102,6 +2139,12 @@ function init() {
     enterMobileSketchStep: () => enterMobileSketchStep({ force: true }),
     exitMobileSketchStep: (opts) => exitMobileSketchStep(opts || { markSummary: true }),
     openMobileParamsAfterSketch: () => openMobileParamsAfterSketch(),
+    unlockMobileResults: () => {
+      state.mobileResultsUnlocked = true;
+      syncChromeUi();
+      syncResultsAsideVisibility();
+      updateStatCards();
+    },
     onDemoStart: () => { onboardingDemoActive = true; },
     onDemoEnd: () => { onboardingDemoActive = false; },
     resetAfterDemo: () => resetUiAfterOnboarding(),

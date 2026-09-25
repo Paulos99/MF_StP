@@ -70,8 +70,14 @@ export class VirtualCursor {
 
   async moveTo(target, { duration = 1115 } = {}) {
     this.show();
+    // Remeasure right before move — targets shift after sidebar/sheet animations
     const point = target instanceof Element ? centerOf(target) : target;
-    if (!point || Number.isNaN(point.x)) return;
+    if (!point || Number.isNaN(point.x) || Number.isNaN(point.y)) return;
+    // Off-screen / collapsed: skip wild jumps
+    if (target instanceof Element) {
+      const r = target.getBoundingClientRect();
+      if (r.width < 2 && r.height < 2) return;
+    }
 
     if (prefersReducedMotion()) {
       this.x = point.x;
@@ -91,15 +97,26 @@ export class VirtualCursor {
     await new Promise((resolve) => {
       const start = performance.now();
       const tick = (now) => {
+        // Live-track element if it moves during the animation (scroll/layout)
+        const live = target instanceof Element ? centerOf(target) : point;
+        const toX = live?.x ?? point.x;
+        const toY = live?.y ?? point.y;
         const t = Math.min(1, (now - start) / ms);
         const e = easeInOutCubic(t);
-        this.x = fromX + (point.x - fromX) * e;
-        this.y = fromY + (point.y - fromY) * e;
+        this.x = fromX + (toX - fromX) * e;
+        this.y = fromY + (toY - fromY) * e;
         this._applyPos(true);
         if (t < 1) {
           this._moving = requestAnimationFrame(tick);
         } else {
           this._moving = null;
+          // Snap to final live center
+          if (target instanceof Element) {
+            const end = centerOf(target);
+            this.x = end.x;
+            this.y = end.y;
+            this._applyPos(true);
+          }
           resolve();
         }
       };
@@ -110,6 +127,13 @@ export class VirtualCursor {
   async click(target, moveOpts) {
     if (target instanceof Element || (target && typeof target.x === 'number')) {
       await this.moveTo(target, moveOpts);
+    }
+    // Remeasure once more after settle — click the live element center
+    if (target instanceof Element) {
+      const end = centerOf(target);
+      this.x = end.x;
+      this.y = end.y;
+      this._applyPos(true);
     }
     await sleep(160);
     this.el?.classList.add('is-pressing');

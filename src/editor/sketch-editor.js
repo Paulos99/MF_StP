@@ -165,8 +165,10 @@ export class SketchEditor {
     this._panStart = null;
     this._pinch = null;
     this._touchPanCandidate = null;
-    this._touchMode = null; // 'pan' | 'pinch' | 'pendingPan' | null
+    this._touchMode = null; // 'pan' | 'pinch' | 'pendingPan' | 'pendingDraw' | 'draw' | null
     this._touchHits = false;
+    this._drawStroke = null; // { fromScreen, anchorWorld } while rubber-banding a wall
+    this._drawFollowZoom = null; // base zoom before length-follow (restored on place)
     this._resizeObserver = null;
 
     this.bgImage = null;
@@ -1242,8 +1244,121 @@ export class SketchEditor {
     this._panning = false;
     this._panStart = null;
     this._touchPanCandidate = null;
+    this._drawStroke = null;
     this._cancelLongPress(false);
     this._dragIdx = null;
+  }
+
+  /** Can rubber-band draw with one finger (open contour, ≥1 vertex). */
+  _canTouchDrawStroke() {
+    return !this.closed
+      && this.vertices.length > 0
+      && !this.openingsModalOpen
+      && !this.bgAdjustMode
+      && !this.geometryLocked;
+  }
+
+  /**
+   * Auto zoom/pan while drawing a wall: short walls → zoom in for 5 cm;
+   * long walls (tens of meters) → zoom out so the whole segment + finger stay in view.
+   * Zoom pivots around the last vertex so the rubber-band end stays under the finger.
+   */
+  _updateDrawFollowCamera(fromWorld, fingerCx, fingerCy) {
+    if (!fromWorld) return;
+    const { w, h } = this._getCanvasSize();
+    if (w < 8 || h < 8) return;
+
+    // World under finger with current camera
+    const tip = this.canvasToWorld(fingerCx, fingerCy);
+    const len = Math.hypot(tip.x - fromWorld.x, tip.y - fromWorld.y);
+
+    // Fit the segment with padding; floor for very short strokes
+    const span = Math.max(len, 0.35);
+    const padM = Math.max(0.45, span * 0.22);
+    const fitZoom = Math.min(
+      (w * 0.82) / ((span + padM * 2) * PX_PER_M),
+      (h * 0.78) / ((span + padM * 2) * PX_PER_M)
+    );
+
+    // Short wall: keep ~5 cm readable (≥10 CSS-px on the canvas buffer scale≈1)
+    let precisionZoom = fitZoom;
+    if (len < 4.5) {
+      const pxPer5cm = 11;
+      precisionZoom = pxPer5cm / (FINE_GRID_STEP * PX_PER_M);
+    }
+
+    // Blend: as length grows, favour fit; when short, favour precision
+    const t = Math.min(1, Math.max(0, (len - 1.2) / 8));
+    let desired = precisionZoom * (1 - t) + fitZoom * t;
+    // Extreme lengths (50–80 m): fit dominates
+    if (len > 20) desired = fitZoom;
+    // Allow deeper zoom-out / zoom-in while rubber-banding than normal pan limits
+    const drawMin = 0.06;
+    const drawMax = 6;
+    desired = Math.max(drawMin, Math.min(drawMax, desired));
+
+    // Smooth toward target so zoom doesn't jump every frame
+    const prev = this.zoom;
+    const next = prev + (desired - prev) * 0.28;
+    if (Math.abs(next - prev) < 0.0008 && len > 0.05) {
+      // Still re-anchor tip under finger if pan drifted
+    } else {
+      this._setZoomAroundWorld(fromWorld, next);
+    }
+
+    // Keep rubber-band tip under the finger after zoom
+    const after = this.worldToCanvas(tip.x, tip.y);
+    this.panX += fingerCx - after.x;
+    this.panY += fingerCy - after.y;
+
+    // Ensure start vertex stays on-screen with a margin
+    const start = this.worldToCanvas(fromWorld.x, fromWorld.y);
+    const margin = 36;
+    let shiftX = 0;
+    let shiftY = 0;
+    if (start.x < margin) shiftX = margin - start.x;
+    else if (start.x > w - margin) shiftX = (w - margin) - start.x;
+    if (start.y < margin) shiftY = margin - start.y;
+    else if (start.y > h - margin) shiftY = (h - margin) - start.y;
+    if (shiftX || shiftY) {
+      this.panX += shiftX;
+      this.panY += shiftY;
+    }
+  }
+
+  _updateTouchDrawPreview(clientX, clientY) {
+    const { cx, cy } = this._clientToCanvas(clientX, clientY);
+    const from = this.vertices[this.vertices.length - 1];
+    if (!from) return;
+
+    this._updateDrawFollowCamera(from, cx, cy);
+
+    const w = this.canvasToWorld(cx, cy);
+    this._updateAdaptiveSnap(w.x, w.y, {
+      isTouch: true,
+      fromPoint: from,
+      anchorCanvas: { cx, cy },
+      allowZoom: false, // length-follow camera owns zoom on touch draw
+      forceMeterSnap: false,
+    });
+    const step = this._snapStep;
+    const snapped = snapPointDraw(w.x, w.y, from, step);
+    if (!this._previewSmooth) this._previewSmooth = { ...snapped };
+    this._previewSmooth.x += (snapped.x - this._previewSmooth.x) * PREVIEW_LERP;
+    this._previewSmooth.y += (snapped.y - this._previewSmooth.y) * PREVIEW_LERP;
+    this._previewPoint = { ...this._previewSmooth };
+    this._previewTarget = snapped;
+    this._notePreviewLength(snapped);
+    this._ensurePreviewSettleAnim();
+    this._scheduleRender();
+  }
+
+  _placeVertexAtClient(clientX, clientY) {
+    const { cx, cy } = this._clientToCanvas(clientX, clientY);
+    if (!this.closed && this._tryCloseContour(cx, cy)) return true;
+    this._onPointerDown({ clientX, clientY, button: 0 });
+    this._onPointerUp({ clientX, clientY, button: 0 });
+    return true;
   }
 
   _onTouchStart(e) {
@@ -1251,6 +1366,7 @@ export class SketchEditor {
     this._touchHits = true;
     if (e.touches.length >= 2) {
       this._touchPanCandidate = null;
+      this._drawStroke = null;
       this._beginPinch(e);
       return;
     }
@@ -1266,6 +1382,7 @@ export class SketchEditor {
       this._panning = true;
       this._panStart = { x: t.clientX, y: t.clientY, panX: this.panX, panY: this.panY };
       this._touchPanCandidate = null;
+      this._drawStroke = null;
       this._selectedEdge = null;
       this._selectedDiagonal = null;
       this.keypad.hide();
@@ -1274,9 +1391,10 @@ export class SketchEditor {
       return;
     }
 
-    // Open contour: short tap places a point; drag past threshold pans
+    // Before first point: short tap places; drag pans / pinch zooms
     if (
       !this.closed
+      && this.vertices.length === 0
       && !target
       && !this.openingsModalOpen
       && !this.bgAdjustMode
@@ -1294,8 +1412,28 @@ export class SketchEditor {
       return;
     }
 
+    // After first point: drag draws the wall (line follows finger); tap places
+    if (this._canTouchDrawStroke() && !target) {
+      this._touchMode = 'pendingDraw';
+      this._touchPanCandidate = {
+        x: t.clientX,
+        y: t.clientY,
+        panX: this.panX,
+        panY: this.panY,
+        cx,
+        cy,
+      };
+      this._drawStroke = {
+        startX: t.clientX,
+        startY: t.clientY,
+        anchor: { ...this.vertices[this.vertices.length - 1] },
+      };
+      return;
+    }
+
     this._touchMode = null;
     this._touchPanCandidate = null;
+    this._drawStroke = null;
     this._onPointerDown({ clientX: t.clientX, clientY: t.clientY, button: 0 });
   }
 
@@ -1303,6 +1441,7 @@ export class SketchEditor {
     e.preventDefault();
     if (e.touches.length >= 2) {
       this._touchPanCandidate = null;
+      this._drawStroke = null;
       if (this._touchMode !== 'pinch') this._beginPinch(e);
       const t0 = e.touches[0];
       const t1 = e.touches[1];
@@ -1330,6 +1469,27 @@ export class SketchEditor {
     }
 
     const t = e.touches[0];
+
+    // Pending draw → commit to rubber-band once past threshold
+    if (this._touchMode === 'pendingDraw' && this._touchPanCandidate) {
+      const cand = this._touchPanCandidate;
+      const dist = Math.hypot(t.clientX - cand.x, t.clientY - cand.y);
+      if (dist >= TOUCH_PAN_THRESHOLD) {
+        this._touchMode = 'draw';
+        this._touchPanCandidate = null;
+        this._panning = false;
+        if (this._drawFollowZoom == null) this._drawFollowZoom = this.zoom;
+        this._updateTouchDrawPreview(t.clientX, t.clientY);
+        return;
+      }
+      return;
+    }
+
+    if (this._touchMode === 'draw') {
+      this._updateTouchDrawPreview(t.clientX, t.clientY);
+      return;
+    }
+
     if (this._touchMode === 'pendingPan' && this._touchPanCandidate) {
       const cand = this._touchPanCandidate;
       const dist = Math.hypot(t.clientX - cand.x, t.clientY - cand.y);
@@ -1364,10 +1524,42 @@ export class SketchEditor {
       this._panning = true;
       this._panStart = { x: t.clientX, y: t.clientY, panX: this.panX, panY: this.panY };
       this._touchPanCandidate = null;
+      this._drawStroke = null;
       return;
     }
 
-    // Tap (no drag) on empty space while drawing → place vertex
+    // Tap (no drag) while drawing → place vertex at touch
+    if (e.touches.length === 0 && this._touchMode === 'pendingDraw' && this._touchPanCandidate) {
+      const cand = this._touchPanCandidate;
+      this._touchPanCandidate = null;
+      this._touchMode = null;
+      this._drawStroke = null;
+      this._placeVertexAtClient(cand.x, cand.y);
+      return;
+    }
+
+    // Rubber-band release → place at snapped preview / finger
+    if (e.touches.length === 0 && this._touchMode === 'draw') {
+      const changed = e.changedTouches?.[0];
+      const x = changed?.clientX ?? this._drawStroke?.startX;
+      const y = changed?.clientY ?? this._drawStroke?.startY;
+      this._touchMode = null;
+      this._drawStroke = null;
+      this._touchPanCandidate = null;
+      if (x != null && y != null) {
+        // Prefer snapped preview tip if available
+        if (this._previewTarget) {
+          const client = this.worldToClient(this._previewTarget.x, this._previewTarget.y);
+          this._placeVertexAtClient(client.x, client.y);
+        } else {
+          this._placeVertexAtClient(x, y);
+        }
+      }
+      this._drawFollowZoom = null;
+      return;
+    }
+
+    // Tap (no drag) on empty space before first point → place vertex
     if (e.touches.length === 0 && this._touchMode === 'pendingPan' && this._touchPanCandidate) {
       const cand = this._touchPanCandidate;
       this._touchPanCandidate = null;
@@ -1379,6 +1571,7 @@ export class SketchEditor {
 
     this._pinch = null;
     this._touchPanCandidate = null;
+    this._drawStroke = null;
     this._touchMode = null;
     this._onPointerUp(e);
   }
@@ -2279,7 +2472,11 @@ export class SketchEditor {
     const touchUi = this._isCoarsePointer() || window.matchMedia?.('(max-width: 899px)')?.matches;
     const fine = this._snapStep <= FINE_GRID_STEP;
     let hintText = touchUi
-      ? (fine ? 'Шаг 5 см · медленно — зум' : 'Тап — точка · между клетками — 5 см')
+      ? (this.vertices.length === 0
+        ? 'Тап — первая точка · двумя пальцами — масштаб'
+        : (fine
+          ? 'Тяните стену · шаг 5 см · масштаб сам подстроится'
+          : 'Тяните палец — линия стены · отпустите, чтобы поставить'))
       : (fine ? 'Шаг 5 см · ведите медленно для зума' : 'Шаг 1 м у линий · между клетками — сразу 5 см');
 
     if (this.closed && this.vertices.length >= 3) {
@@ -2308,7 +2505,9 @@ export class SketchEditor {
           : 'Контур готов · тяните углы или «Настроить стены»';
       }
     } else if (!this.closed && this.vertices.length >= 3) {
-      hintText = 'Замкните контур на красной точке';
+      hintText = touchUi
+        ? 'Тяните к красной точке или тапните её — замкнуть'
+        : 'Замкните контур на красной точке';
     }
 
     if (this.hintTextEl) this.hintTextEl.textContent = hintText;

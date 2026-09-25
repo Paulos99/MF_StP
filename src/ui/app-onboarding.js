@@ -6,7 +6,7 @@ import {
 } from './guided-tour.js';
 import { VirtualCursor, sleep } from './virtual-cursor.js';
 
-export const APP_TUTORIAL_KEY = 'mf-app-tutorial-v6';
+export const APP_TUTORIAL_KEY = 'mf-app-tutorial-v7';
 
 /** L-room in meters (1 m grid). */
 const DEMO_ROOM = [
@@ -255,28 +255,29 @@ async function demoSurfaces(cursor, tour) {
   await ensureSidebarForParams();
 
   const isMobile = tourIsMobileLayout();
-  const heightGroup = $('#drawHeight')?.closest('.form-group');
-  if (isMobile && heightGroup) {
+  const block = $('#sharedCalcOptions');
+
+  if (isMobile && block) {
     try {
-      heightGroup.scrollIntoView({ behavior: 'auto', block: 'center', inline: 'nearest' });
+      block.scrollIntoView({ behavior: 'auto', block: 'center', inline: 'nearest' });
     } catch { /* ignore */ }
-    await sleep(120);
+    await sleep(180);
     await narrate(tour, {
-      title: 'Параметры после схемы',
-      text: 'Задайте высоту стен, что считать и тип монтажа — геометрия уже сохранена.',
-      target: heightGroup,
+      title: 'Что считать и монтаж',
+      text: 'Выберите стены и тип монтажа — только после этого появятся результаты.',
+      textMobile: 'Сначала стены и тип монтажа. Результаты — после кнопки «Готово».',
+      target: block,
       scrollBlock: 'center',
       stepLabel: '4 / 8',
-      pad: 10,
-      radius: 12,
+      pad: 12,
+      radius: 14,
       forceCard: true,
       skipScroll: true,
     });
-    await sleep(BEAT * 0.5);
+    await sleep(BEAT * 0.4);
   }
 
-  const block = $('#sharedCalcOptions');
-  if (block) {
+  if (block && !isMobile) {
     try {
       block.scrollIntoView({ behavior: 'auto', block: 'center', inline: 'nearest' });
     } catch { /* ignore */ }
@@ -457,7 +458,12 @@ function buildSteps() {
           else openMobileSidebar();
           await sleep(280);
         }
-        tour.refreshSpotlight('#drawCalcCard', { radius: 12, pad: 8 });
+        const shared = $('#sharedCalcOptions');
+        if (shared) {
+          try { shared.scrollIntoView({ behavior: 'auto', block: 'center' }); } catch { /* ignore */ }
+          await sleep(120);
+        }
+        tour.refreshSpotlight(shared || '#sharedCalcOptions' || '#drawCalcCard', { radius: 12, pad: 8 });
         await sleep(BEAT * 0.6);
       } else {
         tour.setCopy({
@@ -491,6 +497,8 @@ function buildSteps() {
     async play(cursor, tour) {
       if (tourIsMobileLayout()) {
         closeMobileSidebar();
+        demoHooks?.unlockMobileResults?.();
+        await demoHooks?.runCalculation?.({ silent: true });
         await sleep(220);
       }
       await narrate(tour, {
@@ -538,7 +546,9 @@ function buildSteps() {
     async play(cursor, tour) {
       await narrate(tour, {
         title: 'Обучение всегда под рукой',
-        text: 'Значок «?» в шапке запускает демо снова. Удачных расчётов!',
+        text: tourIsMobileLayout()
+          ? 'Кнопка «?» в шапке запускает демо снова. Удачных расчётов!'
+          : '«Как работает?» в шапке запускает демо снова. Удачных расчётов!',
         target: '#appHelpBtn',
         radius: 22,
         stepLabel: stepLabel(8, total),

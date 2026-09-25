@@ -203,15 +203,19 @@ export class GuidedTour {
 
     if (el?.scrollIntoView && !skipScroll) {
       try {
+        el.setAttribute?.('data-tour-scroll', '');
         el.scrollIntoView({
           behavior: prefersReducedMotion() ? 'auto' : 'smooth',
           block: scrollBlock,
           inline: 'nearest',
         });
-        await waitFrames(prefersReducedMotion() ? 40 : 240);
+        await waitFrames(prefersReducedMotion() ? 40 : 280);
         // Re-measure after scroll; keep card if still clear
         this._position(el, { pad, radius, aboveFooter, sticky: true });
       } catch { /* ignore */ }
+    } else if (el && mobile) {
+      // Even without engine scroll, keep sheet clearance for sticky targets
+      try { el.setAttribute?.('data-tour-scroll', ''); } catch { /* ignore */ }
     }
 
     await waitFrames(prefersReducedMotion() ? 40 : (forceCard ? CARD_MOVE_MS : 180));
@@ -410,8 +414,10 @@ export class GuidedTour {
     if (!target) target = resolveTarget(step?.target) || this._spotlightTarget;
 
     const mobile = isMobileLayout();
+    const sidebarOpen = document.body.classList.contains('mobile-sidebar-open');
+    const aboveFooter = Boolean((step?.aboveFooter && mobile) || (mobile && sidebarOpen));
     this.card.classList.toggle('tour-card--sheet', mobile);
-    this.card.classList.toggle('tour-card--above-footer', Boolean(step?.aboveFooter && mobile));
+    this.card.classList.toggle('tour-card--above-footer', aboveFooter);
 
     // Card stays docked: bottom center (desktop) / bottom sheet (mobile)
     this._dockCard();
@@ -422,11 +428,19 @@ export class GuidedTour {
     }
 
     const rect = target.getBoundingClientRect();
+    // Skip zero-size / off-flow targets (hidden, display:none)
+    if (rect.width < 2 && rect.height < 2) {
+      this.spotlight.classList.add('is-hidden');
+      return;
+    }
+
     const pad = step?.pad ?? SPOTLIGHT_PAD;
+    const sheetReserve = mobile ? Math.min(window.innerHeight * 0.38, 260) : 0;
     const top = Math.max(8, rect.top - pad);
     const left = Math.max(8, rect.left - pad);
     const width = Math.min(window.innerWidth - left - 8, rect.width + pad * 2);
-    const height = Math.min(window.innerHeight - top - 8, rect.height + pad * 2);
+    const maxH = Math.max(40, window.innerHeight - top - 8 - sheetReserve);
+    const height = Math.min(maxH, rect.height + pad * 2);
     const radius = step?.radius ?? 12;
 
     this.spotlight.classList.remove('is-hidden');

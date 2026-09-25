@@ -2852,7 +2852,7 @@ body.tour-demo-playing .tour-skip {
     position: fixed;
     left: 0;
     top: 0;
-    z-index: 5;
+    z-index: 6;
     width: 28px;
     height: 28px;
     margin: -2px 0 0 -2px;
@@ -2942,6 +2942,14 @@ body.tour-demo-playing .tour-skip {
     overflow: visible;
 }
 
+.app-header__help-short {
+    display: none;
+}
+
+.app-header__help-full {
+    display: inline;
+}
+
 .app-header__help:hover {
     color: #fff;
     background: rgba(255, 255, 255, 0.14);
@@ -2993,9 +3001,60 @@ body.tour-demo-playing .tour-skip {
         right: 10px;
         width: auto;
         height: auto;
+        min-width: var(--touch-min);
         min-height: var(--touch-min);
-        padding: 8px 10px;
-        font-size: 0.8rem;
+        padding: 0;
+        font-size: 1.15rem;
+        font-weight: 700;
+        line-height: 1;
+    }
+
+    .app-header__help-full {
+        display: none;
+    }
+
+    .app-header__help-short {
+        display: inline;
+    }
+
+    /* Demo: «Назад» скрыт — «Далее» справа, без дыры */
+    body.tour-demo-playing .tour-nav {
+        justify-content: space-between;
+    }
+
+    body.tour-demo-playing .tour-prev[hidden],
+    body.tour-demo-playing .tour-prev {
+        display: none !important;
+    }
+
+    body.tour-demo-playing .tour-step {
+        text-align: left;
+    }
+
+    /* Нижний sheet не перекрывает цель — запас под карточку тура */
+    body.tour-active .workspace-sidebar__scroll,
+    body.tour-demo-playing .workspace-sidebar__scroll,
+    body.tour-active .app-main,
+    body.tour-demo-playing .app-main {
+        scroll-padding-bottom: min(42vh, 280px);
+    }
+
+    body.tour-active .tour-spotlight-target-pad,
+    body.tour-demo-playing [data-tour-scroll] {
+        scroll-margin-bottom: min(42vh, 280px);
+        scroll-margin-top: 72px;
+    }
+
+    /* Пока открыт сайдбар параметров — sheet над кнопкой «Рассчитать» */
+    body.mobile-sidebar-open.tour-active .tour-card--sheet,
+    body.mobile-sidebar-open.tour-demo-playing .tour-card--sheet {
+        bottom: calc(72px + var(--safe-bottom)) !important;
+        margin: 0 8px 8px;
+        width: calc(100% - 16px) !important;
+        left: 8px !important;
+        right: 8px !important;
+        border-radius: var(--radius-lg);
+        padding-bottom: 12px;
     }
 }
 
