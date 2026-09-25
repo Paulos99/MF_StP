@@ -377,6 +377,8 @@ export class SketchEditor {
     });
 
     this.canvas.addEventListener('mousedown', (e) => {
+      // Ignore ghost mouse clicks after touch
+      if (this._touchHits || this._touchMode === 'draw' || this._touchMode === 'pendingDraw') return;
       this._touchHits = false;
       this._onPointerDown(e);
     });
@@ -1271,43 +1273,43 @@ export class SketchEditor {
     const dx = Math.abs(tipWorld.x - fromWorld.x);
     const dy = Math.abs(tipWorld.y - fromWorld.y);
     const span = Math.max(Math.hypot(dx, dy), 0.4);
-    const padFrac = 0.14;
-    const padM = Math.max(0.5, span * padFrac);
-    // Axis-aligned box covering both points (+ pad)
-    const boxW = Math.max(dx, 0.25) + padM * 2;
-    const boxH = Math.max(dy, 0.25) + padM * 2;
+    const padFrac = 0.16;
+    const padM = Math.max(0.6, span * padFrac);
+    const boxW = Math.max(dx, 0.3) + padM * 2;
+    const boxH = Math.max(dy, 0.3) + padM * 2;
     let desired = Math.min(
       w / (boxW * PX_PER_M),
       h / (boxH * PX_PER_M)
     );
-    // Short walls: keep ~5 cm readable
     if (span < 3.5) {
       const pxPer5cm = 12;
       const precisionZoom = pxPer5cm / (FINE_GRID_STEP * PX_PER_M);
       desired = Math.max(desired, Math.min(precisionZoom, 6));
     }
-    desired = Math.max(0.06, Math.min(6, desired));
+    desired = Math.max(0.05, Math.min(6, desired));
 
-    // Smooth zoom a bit, but keep tip locked to center every frame
-    const prev = this.zoom;
-    this.zoom = prev + (desired - prev) * 0.35;
+    // Long walls: snap zoom quickly so tip never leaves the frame
+    const lerp = span > 6 ? 0.7 : 0.45;
+    this.zoom = this.zoom + (desired - this.zoom) * lerp;
     this.panX = w / 2 - tipWorld.x * PX_PER_M * this.zoom;
     this.panY = h / 2 - tipWorld.y * PX_PER_M * this.zoom;
   }
 
-  /** Begin rubber-band draw: tip starts under finger, then camera recenters on tip. */
+  /** Begin rubber-band: tip starts at last vertex, camera recenters immediately. */
   _beginTouchDrawStroke(clientX, clientY) {
     const from = this.vertices[this.vertices.length - 1];
     if (!from) return;
-    const { cx, cy } = this._clientToCanvas(clientX, clientY);
-    const underFinger = this.canvasToWorld(cx, cy);
     this._drawStroke = {
       from: { x: from.x, y: from.y },
-      tipWorld: { x: underFinger.x, y: underFinger.y },
+      tipWorld: { x: from.x, y: from.y },
       lastClientX: clientX,
       lastClientY: clientY,
     };
     if (this._drawFollowZoom == null) this._drawFollowZoom = this.zoom;
+    // Seed: apply first finger offset from start so the stroke begins under the finger
+    const { cx, cy } = this._clientToCanvas(clientX, clientY);
+    const under = this.canvasToWorld(cx, cy);
+    this._drawStroke.tipWorld = { x: under.x, y: under.y };
     this._applyTouchDrawTip(clientX, clientY, { seed: true });
   }
 
@@ -1323,7 +1325,7 @@ export class SketchEditor {
     if (!seed) {
       const dx = clientX - stroke.lastClientX;
       const dy = clientY - stroke.lastClientY;
-      const scale = PX_PER_M * Math.max(this.zoom, 0.06);
+      const scale = PX_PER_M * Math.max(this.zoom, 0.05);
       stroke.tipWorld.x += dx / scale;
       stroke.tipWorld.y += dy / scale;
     }
@@ -1338,19 +1340,17 @@ export class SketchEditor {
       allowZoom: false,
       forceMeterSnap: false,
     });
-    const step = this._snapStep;
-    const snapped = snapPointDraw(stroke.tipWorld.x, stroke.tipWorld.y, from, step);
+    const snapped = snapPointDraw(stroke.tipWorld.x, stroke.tipWorld.y, from, this._snapStep);
 
     this._fitDrawStrokeCamera(from, snapped);
 
-    if (!this._previewSmooth) this._previewSmooth = { ...snapped };
-    this._previewSmooth.x += (snapped.x - this._previewSmooth.x) * PREVIEW_LERP;
-    this._previewSmooth.y += (snapped.y - this._previewSmooth.y) * PREVIEW_LERP;
-    this._previewPoint = { ...this._previewSmooth };
+    // No lerp lag for touch tip — must stay at camera center visually
+    this._previewSmooth = { ...snapped };
+    this._previewPoint = { ...snapped };
     this._previewTarget = snapped;
     this._notePreviewLength(snapped);
-    this._ensurePreviewSettleAnim();
     this._scheduleRender();
+    this._updateUi();
   }
 
   _placeVertexAtClient(clientX, clientY) {
@@ -1361,11 +1361,56 @@ export class SketchEditor {
     return true;
   }
 
-  /** Place at current rubber-band tip (center of camera). */
+  /** Place at current rubber-band tip (world), without relying on hit-tests. */
   _placeVertexAtPreviewTip() {
-    if (!this._previewTarget) return false;
-    const client = this.worldToClient(this._previewTarget.x, this._previewTarget.y);
-    return this._placeVertexAtClient(client.x, client.y);
+    const tip = this._previewTarget;
+    if (!tip || this.closed) return false;
+    const from = this.vertices[this.vertices.length - 1];
+    if (!from) return false;
+
+    // Closing: tip near first vertex
+    if (this.vertices.length >= 3) {
+      const first = this.vertices[0];
+      const closeR = Math.max(0.35, this._vertexHitRadius() / (PX_PER_M * this.zoom));
+      if (Math.hypot(tip.x - first.x, tip.y - first.y) <= closeR) {
+        this._closeContour();
+        this._previewPoint = null;
+        this._previewSmooth = null;
+        this._previewTarget = null;
+        this._drawStroke = null;
+        return true;
+      }
+    }
+
+    if (this._isTooCloseToExisting(tip.x, tip.y)) return false;
+    if (!this._drawHistorySaved) {
+      this._pushHistory();
+      this._drawHistorySaved = true;
+    }
+    this.vertices.push({
+      x: tip.x,
+      y: tip.y,
+      label: labelForIndex(this.vertices.length),
+    });
+    this._previewPoint = null;
+    this._previewSmooth = null;
+    this._previewTarget = null;
+    this._drawStroke = null;
+    this._exitFineZoomAfterPlace({ x: tip.x, y: tip.y });
+    this.render();
+    this._updateUi();
+    return true;
+  }
+
+  /** Open contour: treat last-vertex hit as "extend wall", not a dead tap. */
+  _isTouchDrawTarget(target) {
+    if (!this._canTouchDrawStroke()) return false;
+    if (!target) return true;
+    if (target.type === 'vertex' && target.index === this.vertices.length - 1) return true;
+    // Closing gesture — first vertex with ≥3 points
+    if (target.type === 'vertex' && target.index === 0 && this.vertices.length >= 3) return false;
+    if (target.type === 'vertex') return true; // mid vertices while open → still draw
+    return !target;
   }
 
   _onTouchStart(e) {
@@ -1419,8 +1464,23 @@ export class SketchEditor {
       return;
     }
 
-    // After first point: drag draws the wall; tip stays camera-centered
-    if (this._canTouchDrawStroke() && !target) {
+    // Close contour: tap first vertex
+    if (
+      !this.closed
+      && this.vertices.length >= 3
+      && target?.type === 'vertex'
+      && target.index === 0
+    ) {
+      this._touchMode = null;
+      this._touchPanCandidate = null;
+      this._drawStroke = null;
+      this._onPointerDown({ clientX: t.clientX, clientY: t.clientY, button: 0 });
+      return;
+    }
+
+    // After first point: any empty / last-vertex press starts wall draw
+    // (hit-testing the last vertex used to skip draw mode → tip under finger, no place on release)
+    if (this._isTouchDrawTarget(target)) {
       this._touchMode = 'pendingDraw';
       this._touchPanCandidate = {
         x: t.clientX,
@@ -1456,14 +1516,12 @@ export class SketchEditor {
       const mid = this._touchMidpoint(t0, t1);
       const { cx, cy } = this._clientToCanvas(mid.x, mid.y);
 
-      // Zoom around pinch center
       const worldBefore = this.canvasToWorld(cx, cy);
       this.zoom = newZoom;
       const after = this.worldToCanvas(worldBefore.x, worldBefore.y);
       this.panX += cx - after.x;
       this.panY += cy - after.y;
 
-      // Two-finger pan
       this.panX += mid.x - pinch.lastMid.x;
       this.panY += mid.y - pinch.lastMid.y;
       pinch.lastMid = mid;
@@ -1473,11 +1531,11 @@ export class SketchEditor {
 
     const t = e.touches[0];
 
-    // Pending draw → commit to rubber-band once past threshold
+    // Pending draw → rubber-band (low threshold so draw mode wins fast)
     if (this._touchMode === 'pendingDraw' && this._touchPanCandidate) {
       const cand = this._touchPanCandidate;
       const dist = Math.hypot(t.clientX - cand.x, t.clientY - cand.y);
-      if (dist >= TOUCH_PAN_THRESHOLD) {
+      if (dist >= 6) {
         this._touchMode = 'draw';
         this._touchPanCandidate = null;
         this._panning = false;
@@ -1510,6 +1568,9 @@ export class SketchEditor {
       this._onPointerMove({ clientX: t.clientX, clientY: t.clientY });
       return;
     }
+    // Do not feed mouse-style preview while a touch gesture owns the canvas —
+    // that was sending the tip off-screen without camera fit / place-on-release.
+    if (this._touchHits) return;
     this._onPointerMove({ clientX: t.clientX, clientY: t.clientY });
   }
 
@@ -1519,7 +1580,6 @@ export class SketchEditor {
       return;
     }
     if (e.touches.length === 1 && this._touchMode === 'pinch') {
-      // Continue as one-finger pan after pinch
       const t = e.touches[0];
       this._touchMode = 'pan';
       this._pinch = null;
@@ -1537,6 +1597,7 @@ export class SketchEditor {
       this._touchMode = null;
       this._drawStroke = null;
       this._placeVertexAtClient(cand.x, cand.y);
+      this._touchHits = false;
       return;
     }
 
@@ -1547,6 +1608,7 @@ export class SketchEditor {
       this._touchPanCandidate = null;
       this._placeVertexAtPreviewTip();
       this._drawFollowZoom = null;
+      this._touchHits = false;
       return;
     }
 
@@ -1557,6 +1619,25 @@ export class SketchEditor {
       this._touchMode = null;
       this._onPointerDown({ clientX: cand.x, clientY: cand.y, button: 0 });
       this._onPointerUp({ clientX: cand.x, clientY: cand.y, button: 0 });
+      this._touchHits = false;
+      return;
+    }
+
+    // Safety net: if preview exists after a touch stroke, still place on release
+    if (
+      e.touches.length === 0
+      && this._touchHits
+      && !this.closed
+      && this.vertices.length > 0
+      && this._previewTarget
+    ) {
+      this._placeVertexAtPreviewTip();
+      this._pinch = null;
+      this._touchPanCandidate = null;
+      this._drawStroke = null;
+      this._touchMode = null;
+      this._drawFollowZoom = null;
+      this._touchHits = false;
       return;
     }
 
@@ -1564,6 +1645,7 @@ export class SketchEditor {
     this._touchPanCandidate = null;
     this._drawStroke = null;
     this._touchMode = null;
+    this._touchHits = false;
     this._onPointerUp(e);
   }
 
@@ -1751,6 +1833,10 @@ export class SketchEditor {
   }
 
   _onPointerMove(e) {
+    // Ignore synthetic mouse moves while a touch stroke owns the gesture
+    if (this._touchHits || this._touchMode === 'draw' || this._touchMode === 'pendingDraw') {
+      return;
+    }
     const { cx, cy } = this._pointerPos(e);
 
     if (this._panning && this._panStart) {
