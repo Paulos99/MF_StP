@@ -1262,8 +1262,7 @@ export class SketchEditor {
 
   /**
    * Camera while rubber-banding a wall on touch:
-   * - tip (free end) always at canvas center
-   * - zoom fits the whole segment from→tip with padding
+   * both endpoints always in frame; pan on segment midpoint; no forced close-up zoom.
    */
   _fitDrawStrokeCamera(fromWorld, tipWorld) {
     if (!fromWorld || !tipWorld) return;
@@ -1273,26 +1272,35 @@ export class SketchEditor {
     const dx = Math.abs(tipWorld.x - fromWorld.x);
     const dy = Math.abs(tipWorld.y - fromWorld.y);
     const span = Math.max(Math.hypot(dx, dy), 0.4);
-    const padFrac = 0.16;
-    const padM = Math.max(0.6, span * padFrac);
+    const padFrac = 0.2;
+    const padM = Math.max(0.8, span * padFrac);
     const boxW = Math.max(dx, 0.3) + padM * 2;
     const boxH = Math.max(dy, 0.3) + padM * 2;
-    let desired = Math.min(
-      w / (boxW * PX_PER_M),
-      h / (boxH * PX_PER_M)
-    );
-    if (span < 3.5) {
-      const pxPer5cm = 12;
-      const precisionZoom = pxPer5cm / (FINE_GRID_STEP * PX_PER_M);
-      desired = Math.max(desired, Math.min(precisionZoom, 6));
-    }
-    desired = Math.max(0.05, Math.min(6, desired));
 
-    // Long walls: snap zoom quickly so tip never leaves the frame
-    const lerp = span > 6 ? 0.7 : 0.45;
+    // Fit only — never boost zoom past what keeps both points visible
+    let desired = Math.min(w / (boxW * PX_PER_M), h / (boxH * PX_PER_M)) * 0.88;
+    desired = Math.max(0.05, Math.min(2.2, desired));
+
+    const lerp = span > 6 ? 0.75 : 0.65;
     this.zoom = this.zoom + (desired - this.zoom) * lerp;
-    this.panX = w / 2 - tipWorld.x * PX_PER_M * this.zoom;
-    this.panY = h / 2 - tipWorld.y * PX_PER_M * this.zoom;
+
+    const midX = (fromWorld.x + tipWorld.x) / 2;
+    const midY = (fromWorld.y + tipWorld.y) / 2;
+    this.panX = w / 2 - midX * PX_PER_M * this.zoom;
+    this.panY = h / 2 - midY * PX_PER_M * this.zoom;
+
+    // Safety: if either endpoint is outside the margin, zoom out and recentre
+    const margin = 24;
+    const a = this.worldToCanvas(fromWorld.x, fromWorld.y);
+    const b = this.worldToCanvas(tipWorld.x, tipWorld.y);
+    const out =
+      a.x < margin || a.x > w - margin || a.y < margin || a.y > h - margin
+      || b.x < margin || b.x > w - margin || b.y < margin || b.y > h - margin;
+    if (out) {
+      this.zoom = Math.max(0.05, this.zoom * 0.85);
+      this.panX = w / 2 - midX * PX_PER_M * this.zoom;
+      this.panY = h / 2 - midY * PX_PER_M * this.zoom;
+    }
   }
 
   /** Begin rubber-band: tip starts at last vertex, camera recenters immediately. */
