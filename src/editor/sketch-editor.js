@@ -167,7 +167,7 @@ export class SketchEditor {
     this._touchPanCandidate = null;
     this._touchMode = null; // 'pan' | 'pinch' | 'pendingPan' | 'pendingDraw' | 'draw' | null
     this._touchHits = false;
-    this._drawStroke = null; // { fromScreen, anchorWorld } while rubber-banding a wall
+    this._drawStroke = null; // { from, tipWorld, lastClientX/Y } while rubber-banding
     this._drawFollowZoom = null; // base zoom before length-follow (restored on place)
     this._resizeObserver = null;
 
@@ -1259,90 +1259,90 @@ export class SketchEditor {
   }
 
   /**
-   * Auto zoom/pan while drawing a wall: short walls → zoom in for 5 cm;
-   * long walls (tens of meters) → zoom out so the whole segment + finger stay in view.
-   * Zoom pivots around the last vertex so the rubber-band end stays under the finger.
+   * Camera while rubber-banding a wall on touch:
+   * - tip (free end) always at canvas center
+   * - zoom fits the whole segment from→tip with padding
    */
-  _updateDrawFollowCamera(fromWorld, fingerCx, fingerCy) {
-    if (!fromWorld) return;
+  _fitDrawStrokeCamera(fromWorld, tipWorld) {
+    if (!fromWorld || !tipWorld) return;
     const { w, h } = this._getCanvasSize();
     if (w < 8 || h < 8) return;
 
-    // World under finger with current camera
-    const tip = this.canvasToWorld(fingerCx, fingerCy);
-    const len = Math.hypot(tip.x - fromWorld.x, tip.y - fromWorld.y);
-
-    // Fit the segment with padding; floor for very short strokes
-    const span = Math.max(len, 0.35);
-    const padM = Math.max(0.45, span * 0.22);
-    const fitZoom = Math.min(
-      (w * 0.82) / ((span + padM * 2) * PX_PER_M),
-      (h * 0.78) / ((span + padM * 2) * PX_PER_M)
+    const dx = Math.abs(tipWorld.x - fromWorld.x);
+    const dy = Math.abs(tipWorld.y - fromWorld.y);
+    const span = Math.max(Math.hypot(dx, dy), 0.4);
+    const padFrac = 0.14;
+    const padM = Math.max(0.5, span * padFrac);
+    // Axis-aligned box covering both points (+ pad)
+    const boxW = Math.max(dx, 0.25) + padM * 2;
+    const boxH = Math.max(dy, 0.25) + padM * 2;
+    let desired = Math.min(
+      w / (boxW * PX_PER_M),
+      h / (boxH * PX_PER_M)
     );
-
-    // Short wall: keep ~5 cm readable (≥10 CSS-px on the canvas buffer scale≈1)
-    let precisionZoom = fitZoom;
-    if (len < 4.5) {
-      const pxPer5cm = 11;
-      precisionZoom = pxPer5cm / (FINE_GRID_STEP * PX_PER_M);
+    // Short walls: keep ~5 cm readable
+    if (span < 3.5) {
+      const pxPer5cm = 12;
+      const precisionZoom = pxPer5cm / (FINE_GRID_STEP * PX_PER_M);
+      desired = Math.max(desired, Math.min(precisionZoom, 6));
     }
+    desired = Math.max(0.06, Math.min(6, desired));
 
-    // Blend: as length grows, favour fit; when short, favour precision
-    const t = Math.min(1, Math.max(0, (len - 1.2) / 8));
-    let desired = precisionZoom * (1 - t) + fitZoom * t;
-    // Extreme lengths (50–80 m): fit dominates
-    if (len > 20) desired = fitZoom;
-    // Allow deeper zoom-out / zoom-in while rubber-banding than normal pan limits
-    const drawMin = 0.06;
-    const drawMax = 6;
-    desired = Math.max(drawMin, Math.min(drawMax, desired));
-
-    // Smooth toward target so zoom doesn't jump every frame
+    // Smooth zoom a bit, but keep tip locked to center every frame
     const prev = this.zoom;
-    const next = prev + (desired - prev) * 0.28;
-    if (Math.abs(next - prev) < 0.0008 && len > 0.05) {
-      // Still re-anchor tip under finger if pan drifted
-    } else {
-      this._setZoomAroundWorld(fromWorld, next);
-    }
-
-    // Keep rubber-band tip under the finger after zoom
-    const after = this.worldToCanvas(tip.x, tip.y);
-    this.panX += fingerCx - after.x;
-    this.panY += fingerCy - after.y;
-
-    // Ensure start vertex stays on-screen with a margin
-    const start = this.worldToCanvas(fromWorld.x, fromWorld.y);
-    const margin = 36;
-    let shiftX = 0;
-    let shiftY = 0;
-    if (start.x < margin) shiftX = margin - start.x;
-    else if (start.x > w - margin) shiftX = (w - margin) - start.x;
-    if (start.y < margin) shiftY = margin - start.y;
-    else if (start.y > h - margin) shiftY = (h - margin) - start.y;
-    if (shiftX || shiftY) {
-      this.panX += shiftX;
-      this.panY += shiftY;
-    }
+    this.zoom = prev + (desired - prev) * 0.35;
+    this.panX = w / 2 - tipWorld.x * PX_PER_M * this.zoom;
+    this.panY = h / 2 - tipWorld.y * PX_PER_M * this.zoom;
   }
 
-  _updateTouchDrawPreview(clientX, clientY) {
-    const { cx, cy } = this._clientToCanvas(clientX, clientY);
+  /** Begin rubber-band draw: tip starts under finger, then camera recenters on tip. */
+  _beginTouchDrawStroke(clientX, clientY) {
     const from = this.vertices[this.vertices.length - 1];
     if (!from) return;
+    const { cx, cy } = this._clientToCanvas(clientX, clientY);
+    const underFinger = this.canvasToWorld(cx, cy);
+    this._drawStroke = {
+      from: { x: from.x, y: from.y },
+      tipWorld: { x: underFinger.x, y: underFinger.y },
+      lastClientX: clientX,
+      lastClientY: clientY,
+    };
+    if (this._drawFollowZoom == null) this._drawFollowZoom = this.zoom;
+    this._applyTouchDrawTip(clientX, clientY, { seed: true });
+  }
 
-    this._updateDrawFollowCamera(from, cx, cy);
+  /**
+   * Finger delta → tipWorld; snap; fit camera with tip at center.
+   * @param {{ seed?: boolean }} [opts]
+   */
+  _applyTouchDrawTip(clientX, clientY, { seed = false } = {}) {
+    const stroke = this._drawStroke;
+    const from = this.vertices[this.vertices.length - 1];
+    if (!stroke || !from) return;
 
-    const w = this.canvasToWorld(cx, cy);
-    this._updateAdaptiveSnap(w.x, w.y, {
+    if (!seed) {
+      const dx = clientX - stroke.lastClientX;
+      const dy = clientY - stroke.lastClientY;
+      const scale = PX_PER_M * Math.max(this.zoom, 0.06);
+      stroke.tipWorld.x += dx / scale;
+      stroke.tipWorld.y += dy / scale;
+    }
+    stroke.lastClientX = clientX;
+    stroke.lastClientY = clientY;
+    stroke.from = { x: from.x, y: from.y };
+
+    this._updateAdaptiveSnap(stroke.tipWorld.x, stroke.tipWorld.y, {
       isTouch: true,
       fromPoint: from,
-      anchorCanvas: { cx, cy },
-      allowZoom: false, // length-follow camera owns zoom on touch draw
+      anchorCanvas: null,
+      allowZoom: false,
       forceMeterSnap: false,
     });
     const step = this._snapStep;
-    const snapped = snapPointDraw(w.x, w.y, from, step);
+    const snapped = snapPointDraw(stroke.tipWorld.x, stroke.tipWorld.y, from, step);
+
+    this._fitDrawStrokeCamera(from, snapped);
+
     if (!this._previewSmooth) this._previewSmooth = { ...snapped };
     this._previewSmooth.x += (snapped.x - this._previewSmooth.x) * PREVIEW_LERP;
     this._previewSmooth.y += (snapped.y - this._previewSmooth.y) * PREVIEW_LERP;
@@ -1359,6 +1359,13 @@ export class SketchEditor {
     this._onPointerDown({ clientX, clientY, button: 0 });
     this._onPointerUp({ clientX, clientY, button: 0 });
     return true;
+  }
+
+  /** Place at current rubber-band tip (center of camera). */
+  _placeVertexAtPreviewTip() {
+    if (!this._previewTarget) return false;
+    const client = this.worldToClient(this._previewTarget.x, this._previewTarget.y);
+    return this._placeVertexAtClient(client.x, client.y);
   }
 
   _onTouchStart(e) {
@@ -1412,7 +1419,7 @@ export class SketchEditor {
       return;
     }
 
-    // After first point: drag draws the wall (line follows finger); tap places
+    // After first point: drag draws the wall; tip stays camera-centered
     if (this._canTouchDrawStroke() && !target) {
       this._touchMode = 'pendingDraw';
       this._touchPanCandidate = {
@@ -1423,11 +1430,7 @@ export class SketchEditor {
         cx,
         cy,
       };
-      this._drawStroke = {
-        startX: t.clientX,
-        startY: t.clientY,
-        anchor: { ...this.vertices[this.vertices.length - 1] },
-      };
+      this._drawStroke = null;
       return;
     }
 
@@ -1478,15 +1481,14 @@ export class SketchEditor {
         this._touchMode = 'draw';
         this._touchPanCandidate = null;
         this._panning = false;
-        if (this._drawFollowZoom == null) this._drawFollowZoom = this.zoom;
-        this._updateTouchDrawPreview(t.clientX, t.clientY);
+        this._beginTouchDrawStroke(t.clientX, t.clientY);
         return;
       }
       return;
     }
 
     if (this._touchMode === 'draw') {
-      this._updateTouchDrawPreview(t.clientX, t.clientY);
+      this._applyTouchDrawTip(t.clientX, t.clientY);
       return;
     }
 
@@ -1538,23 +1540,12 @@ export class SketchEditor {
       return;
     }
 
-    // Rubber-band release → place at snapped preview / finger
+    // Rubber-band release → place at snapped tip (camera center)
     if (e.touches.length === 0 && this._touchMode === 'draw') {
-      const changed = e.changedTouches?.[0];
-      const x = changed?.clientX ?? this._drawStroke?.startX;
-      const y = changed?.clientY ?? this._drawStroke?.startY;
       this._touchMode = null;
       this._drawStroke = null;
       this._touchPanCandidate = null;
-      if (x != null && y != null) {
-        // Prefer snapped preview tip if available
-        if (this._previewTarget) {
-          const client = this.worldToClient(this._previewTarget.x, this._previewTarget.y);
-          this._placeVertexAtClient(client.x, client.y);
-        } else {
-          this._placeVertexAtClient(x, y);
-        }
-      }
+      this._placeVertexAtPreviewTip();
       this._drawFollowZoom = null;
       return;
     }
@@ -2474,9 +2465,7 @@ export class SketchEditor {
     let hintText = touchUi
       ? (this.vertices.length === 0
         ? 'Тап — первая точка · двумя пальцами — масштаб'
-        : (fine
-          ? 'Тяните стену · шаг 5 см · масштаб сам подстроится'
-          : 'Тяните палец — линия стены · отпустите, чтобы поставить'))
+        : 'Тяните — конец стены в центре · отпустите, чтобы поставить')
       : (fine ? 'Шаг 5 см · ведите медленно для зума' : 'Шаг 1 м у линий · между клетками — сразу 5 см');
 
     if (this.closed && this.vertices.length >= 3) {
