@@ -44,9 +44,9 @@ const DRAW_SOFT_FRAC = 0.2; // tip soft-zone inset as fraction of min(w,h)
 const DRAW_SOFT_MIN_PX = 44;
 const DRAW_HARD_PX = 28; // start point must stay inside this margin
 const DRAW_TIP_PUSH_LERP = 0.12;
-const DRAW_ZOOM_OUT_LERP = 0.07;
-const DRAW_EDGE_EXTEND_IDLE = 0.06; // m/frame while finger in soft band
-const DRAW_EDGE_EXTEND_PINNED = 0.12;
+const DRAW_ZOOM_OUT_LERP = 0.1;
+const DRAW_EDGE_EXTEND_IDLE = 0.1; // m/frame while finger in soft band
+const DRAW_EDGE_EXTEND_PINNED = 0.28;
 const MAX_ZOOM = 4;
 const LONG_PRESS_MS = 500;
 const TOUCH_PAN_THRESHOLD = 12;
@@ -1339,12 +1339,9 @@ export class SketchEditor {
         }
       }
 
-      // Smooth finger-anchor (lerp, not snap) — kills pan↔anchor fight
-      const wantPanX = fingerCanvas.cx - tipWorld.x * PX_PER_M * this.zoom;
-      const wantPanY = fingerCanvas.cy - tipWorld.y * PX_PER_M * this.zoom;
-      const anchorLerp = fromOutsideHard ? 0.28 : 0.2;
-      this.panX += (wantPanX - this.panX) * anchorLerp;
-      this.panY += (wantPanY - this.panY) * anchorLerp;
+      // Hard finger-anchor in edge mode — tip must not drift off-screen while extending
+      this.panX = fingerCanvas.cx - tipWorld.x * PX_PER_M * this.zoom;
+      this.panY = fingerCanvas.cy - tipWorld.y * PX_PER_M * this.zoom;
       return;
     }
 
@@ -1404,7 +1401,9 @@ export class SketchEditor {
 
     const { w, h } = this._getCanvasSize();
     const soft = Math.max(DRAW_SOFT_MIN_PX, Math.min(w, h) * DRAW_SOFT_FRAC);
-    const edgeMode = cx < soft || cx > w - soft || cy < soft || cy > h - soft;
+    // Slightly wider than soft inset so holding near the bezel stays in edge mode
+    const edgeBand = soft * 1.15;
+    const edgeMode = cx < edgeBand || cx > w - edgeBand || cy < edgeBand || cy > h - edgeBand;
 
     // Grow tip from finger pressure only in edge mode (one camera pass after)
     if (edgeMode) {
@@ -1413,20 +1412,20 @@ export class SketchEditor {
       const fromPinned =
         fromS.x < hard || fromS.x > w - hard
         || fromS.y < hard || fromS.y > h - hard;
-      const rate = fromPinned ? DRAW_EDGE_EXTEND_PINNED : DRAW_EDGE_EXTEND_IDLE;
-      if (cy > h - soft) {
-        const pressure = Math.min(1, (cy - (h - soft)) / soft);
-        stroke.tipWorld.y += rate * Math.max(0.04, pressure);
-      } else if (cy < soft) {
-        const pressure = Math.min(1, (soft - cy) / soft);
-        stroke.tipWorld.y -= rate * Math.max(0.04, pressure);
+      const span = Math.hypot(stroke.tipWorld.x - from.x, stroke.tipWorld.y - from.y);
+      // Longer walls need faster edge crawl so user needn't scrub the bezel
+      const spanBoost = Math.min(0.35, span * 0.006);
+      const rate = (fromPinned ? DRAW_EDGE_EXTEND_PINNED : DRAW_EDGE_EXTEND_IDLE) + spanBoost;
+      const pressureOf = (overflow, band) => Math.min(1, Math.max(0.15, overflow / band));
+      if (cy > h - edgeBand) {
+        stroke.tipWorld.y += rate * pressureOf(cy - (h - edgeBand), edgeBand);
+      } else if (cy < edgeBand) {
+        stroke.tipWorld.y -= rate * pressureOf(edgeBand - cy, edgeBand);
       }
-      if (cx > w - soft) {
-        const pressure = Math.min(1, (cx - (w - soft)) / soft);
-        stroke.tipWorld.x += rate * Math.max(0.04, pressure);
-      } else if (cx < soft) {
-        const pressure = Math.min(1, (soft - cx) / soft);
-        stroke.tipWorld.x -= rate * Math.max(0.04, pressure);
+      if (cx > w - edgeBand) {
+        stroke.tipWorld.x += rate * pressureOf(cx - (w - edgeBand), edgeBand);
+      } else if (cx < edgeBand) {
+        stroke.tipWorld.x -= rate * pressureOf(edgeBand - cx, edgeBand);
       }
     }
 
