@@ -40,11 +40,11 @@ const GRID_MAJOR_COLOR = 'rgba(0, 0, 0, 0.22)';
 const PX_PER_M = 40;
 const MIN_ZOOM = 0.1;
 const DRAW_STROKE_MIN_ZOOM = 0.08;
-const DRAW_DEAD_SOFT_FRAC = 0.2; // soft-zone inset as fraction of min(w,h)
-const DRAW_DEAD_HARD_PX = 26;
-const DRAW_PUSH_LERP = 0.16;
-const DRAW_ZOOM_OUT_LERP = 0.1;
-const DRAW_ZOOM_IN_LERP = 0.05;
+const DRAW_SOFT_FRAC = 0.2; // tip soft-zone inset as fraction of min(w,h)
+const DRAW_SOFT_MIN_PX = 44;
+const DRAW_HARD_PX = 28; // start point must stay inside this margin
+const DRAW_TIP_PUSH_LERP = 0.18;
+const DRAW_ZOOM_OUT_LERP = 0.08;
 const MAX_ZOOM = 4;
 const LONG_PRESS_MS = 500;
 const TOUCH_PAN_THRESHOLD = 12;
@@ -174,7 +174,7 @@ export class SketchEditor {
     this._touchPanCandidate = null;
     this._touchMode = null; // 'pan' | 'pinch' | 'pendingPan' | 'pendingDraw' | 'draw' | null
     this._touchHits = false;
-    this._drawStroke = null; // { from, tipWorld, lastCanvas, baseZoom } rubber-band + dead-zone cam
+    this._drawStroke = null; // { from, tipWorld, lastCanvas, baseZoom } tip-led draw cam
     this._resizeObserver = null;
 
     this.bgImage = null;
@@ -1268,13 +1268,24 @@ export class SketchEditor {
 
   /**
    * Begin rubber-band: tip tracks finger deltas in world space;
-   * camera uses a dead-zone / soft-push frame (platformer-style).
+   * tip-led camera with soft push + zoom-out only to keep start visible.
    */
   _beginTouchDrawStroke(clientX, clientY) {
     const from = this.vertices[this.vertices.length - 1];
     if (!from) return;
     const { cx, cy } = this._clientToCanvas(clientX, clientY);
     const under = this.canvasToWorld(cx, cy);
+    const { w, h } = this._getCanvasSize();
+    // Avoid starting a stroke at extreme close-up (single-vertex fit can hit ~400%):
+    // keep enough frame for ~12 m so tip-led pan can reach the hard edge.
+    const comfortZoom = Math.min(w, h) / (12 * PX_PER_M);
+    if (this.zoom > comfortZoom * 1.25) {
+      const target = Math.max(DRAW_STROKE_MIN_ZOOM, comfortZoom);
+      const tipScreen = this.worldToCanvas(under.x, under.y);
+      this.zoom = target;
+      this.panX = tipScreen.x - under.x * PX_PER_M * this.zoom;
+      this.panY = tipScreen.y - under.y * PX_PER_M * this.zoom;
+    }
     this._drawStroke = {
       from: { x: from.x, y: from.y },
       tipWorld: { x: under.x, y: under.y },
@@ -1285,94 +1296,77 @@ export class SketchEditor {
   }
 
   /**
-   * Platformer-style dead zone: no camera move while from+tip stay inside soft inset.
-   * Leaving the soft zone gently pushes pan; zoom-out only when span cannot fit.
+   * Tip-led camera: tip is the hero; start (A) is a hard constraint.
+   * — tip inside soft frame → camera idle
+   * — tip leaves soft frame → pan only (keep tip in soft frame)
+   * — after tip pan, if A would leave hard margin → smooth zoom-out,
+   *   then re-anchor pan so tip stays under the finger
+   * No midpoint recenter, no mid-stroke zoom-in, no opposing-push zoom punches.
    * @param {{ x: number, y: number }} from
    * @param {{ x: number, y: number }} tipWorld
+   * @param {{ cx: number, cy: number }} fingerCanvas
    */
-  _fitTouchDrawCamera(from, tipWorld) {
+  _fitTouchDrawCamera(from, tipWorld, fingerCanvas) {
     const { w, h } = this._getCanvasSize();
     if (w < 8 || h < 8) return;
 
-    const hard = DRAW_DEAD_HARD_PX;
-    const soft = Math.max(hard + 18, Math.min(w, h) * DRAW_DEAD_SOFT_FRAC);
+    const hard = DRAW_HARD_PX;
+    const soft = Math.max(DRAW_SOFT_MIN_PX, Math.min(w, h) * DRAW_SOFT_FRAC);
     const baseZoom = this._drawStroke?.baseZoom ?? this.zoom;
-    const spanX = Math.abs(tipWorld.x - from.x);
-    const spanY = Math.abs(tipWorld.y - from.y);
-    const span = Math.hypot(spanX, spanY);
 
-    // Zoom only when both points cannot fit inside hard margins
-    const fitZoom = Math.min(
-      (w - hard * 2) / (Math.max(spanX, 0.25) * PX_PER_M),
-      (h - hard * 2) / (Math.max(spanY, 0.25) * PX_PER_M),
-    ) * 0.92;
-    const minFit = Math.max(DRAW_STROKE_MIN_ZOOM, Math.min(baseZoom, fitZoom));
+    // 1) Tip soft-push: move camera only enough to keep tip inside soft frame
+    const tipScreen = this.worldToCanvas(tipWorld.x, tipWorld.y);
+    let tipPushX = 0;
+    let tipPushY = 0;
+    if (tipScreen.x < soft) tipPushX = soft - tipScreen.x;
+    else if (tipScreen.x > w - soft) tipPushX = (w - soft) - tipScreen.x;
+    if (tipScreen.y < soft) tipPushY = soft - tipScreen.y;
+    else if (tipScreen.y > h - soft) tipPushY = (h - soft) - tipScreen.y;
 
-    if (minFit < this.zoom - 0.002) {
-      this.zoom += (minFit - this.zoom) * DRAW_ZOOM_OUT_LERP;
-    } else if (this.zoom < baseZoom - 0.002 && fitZoom > this.zoom * 1.2) {
-      // Room again — ease zoom back toward stroke start, never above base
-      const target = Math.min(baseZoom, fitZoom * 0.98);
-      this.zoom += (target - this.zoom) * DRAW_ZOOM_IN_LERP;
+    if (tipPushX || tipPushY) {
+      this.panX += tipPushX * DRAW_TIP_PUSH_LERP;
+      this.panY += tipPushY * DRAW_TIP_PUSH_LERP;
     }
-    this.zoom = Math.max(DRAW_STROKE_MIN_ZOOM, Math.min(MAX_ZOOM, this.zoom));
 
-    const edgePush = (wx, wy) => {
-      const p = this.worldToCanvas(wx, wy);
-      let dpx = 0;
-      let dpy = 0;
-      if (p.x < soft) dpx = soft - p.x;
-      else if (p.x > w - soft) dpx = (w - soft) - p.x;
-      if (p.y < soft) dpy = soft - p.y;
-      else if (p.y > h - soft) dpy = (h - soft) - p.y;
-      return { dpx, dpy };
-    };
+    // 2) If start left the hard margin (typically after tip push), zoom out — never zoom in mid-stroke
+    const fromScreen = this.worldToCanvas(from.x, from.y);
+    const fromOutsideHard =
+      fromScreen.x < hard || fromScreen.x > w - hard
+      || fromScreen.y < hard || fromScreen.y > h - hard;
 
-    const combineAxis = (a, b) => {
-      if (a && b && Math.sign(a) !== Math.sign(b)) {
-        // Opposite pulls → span too wide for pan alone; nudge zoom out
-        this.zoom = Math.max(DRAW_STROKE_MIN_ZOOM, this.zoom * (1 - 0.04));
-        return 0;
+    if (fromOutsideHard) {
+      const spanX = Math.max(Math.abs(tipWorld.x - from.x), 0.25);
+      const spanY = Math.max(Math.abs(tipWorld.y - from.y), 0.25);
+      const needed = Math.min(
+        (w - hard * 2) / (spanX * PX_PER_M),
+        (h - hard * 2) / (spanY * PX_PER_M),
+      ) * 0.94;
+      const target = Math.max(DRAW_STROKE_MIN_ZOOM, Math.min(baseZoom, needed));
+      if (target < this.zoom - 0.001) {
+        this.zoom += (target - this.zoom) * DRAW_ZOOM_OUT_LERP;
+        this.zoom = Math.max(DRAW_STROKE_MIN_ZOOM, Math.min(MAX_ZOOM, this.zoom));
       }
-      if (a && b) return Math.abs(a) >= Math.abs(b) ? a : b;
-      return a || b;
-    };
-
-    const pa = edgePush(from.x, from.y);
-    const pb = edgePush(tipWorld.x, tipWorld.y);
-    const dpx = combineAxis(pa.dpx, pb.dpx);
-    const dpy = combineAxis(pa.dpy, pb.dpy);
-
-    if (dpx || dpy) {
-      this.panX += dpx * DRAW_PUSH_LERP;
-      this.panY += dpy * DRAW_PUSH_LERP;
+      // Keep tip under finger after zoom / while A is clamped to the hard edge
+      if (fingerCanvas) {
+        this.panX = fingerCanvas.cx - tipWorld.x * PX_PER_M * this.zoom;
+        this.panY = fingerCanvas.cy - tipWorld.y * PX_PER_M * this.zoom;
+      }
+      // If A still outside after finger-anchor, ease zoom a bit more next frames
+      const from2 = this.worldToCanvas(from.x, from.y);
+      if (
+        from2.x < hard || from2.x > w - hard
+        || from2.y < hard || from2.y > h - hard
+      ) {
+        this.zoom = Math.max(DRAW_STROKE_MIN_ZOOM, this.zoom * (1 - 0.03));
+        if (fingerCanvas) {
+          this.panX = fingerCanvas.cx - tipWorld.x * PX_PER_M * this.zoom;
+          this.panY = fingerCanvas.cy - tipWorld.y * PX_PER_M * this.zoom;
+        }
+      }
     }
-
-    // Hard clamp: if still outside hard margin after soft push, snap pan the remainder gently
-    const hardPush = (wx, wy) => {
-      const p = this.worldToCanvas(wx, wy);
-      let dpx = 0;
-      let dpy = 0;
-      if (p.x < hard) dpx = hard - p.x;
-      else if (p.x > w - hard) dpx = (w - hard) - p.x;
-      if (p.y < hard) dpy = hard - p.y;
-      else if (p.y > h - hard) dpy = (h - hard) - p.y;
-      return { dpx, dpy };
-    };
-    const ha = hardPush(from.x, from.y);
-    const hb = hardPush(tipWorld.x, tipWorld.y);
-    const hpx = combineAxis(ha.dpx, hb.dpx);
-    const hpy = combineAxis(ha.dpy, hb.dpy);
-    if (hpx || hpy) {
-      this.panX += hpx * 0.45;
-      this.panY += hpy * 0.45;
-    }
-
-    // Keep stroke base aware of long walls for UI
-    if (this._drawStroke) this._drawStroke._span = span;
   }
 
-  /** Tip follows finger deltas; camera only soft-pushes at the dead-zone edge. */
+  /** Tip follows finger deltas; camera tip-led soft-push + zoom-out to keep start visible. */
   _applyTouchDrawTip(clientX, clientY) {
     const stroke = this._drawStroke;
     const from = this.vertices[this.vertices.length - 1];
@@ -1387,7 +1381,42 @@ export class SketchEditor {
     stroke.tipWorld.y += (cy - prev.cy) / scale;
     stroke.lastCanvas = { cx, cy };
 
-    this._fitTouchDrawCamera(from, stroke.tipWorld);
+    // One pass — never re-sample tip via canvasToWorld after camera change
+    this._fitTouchDrawCamera(from, stroke.tipWorld, { cx, cy });
+
+    // Edge extend by finger pressure on soft band (not tipScreen after pan —
+    // tip is pushed back inside soft each frame, so tip-based overflow never sticks).
+    {
+      const { w, h } = this._getCanvasSize();
+      const soft = Math.max(DRAW_SOFT_MIN_PX, Math.min(w, h) * DRAW_SOFT_FRAC);
+      const hard = DRAW_HARD_PX;
+      const fromS = this.worldToCanvas(from.x, from.y);
+      const fromPinned =
+        fromS.x < hard || fromS.x > w - hard
+        || fromS.y < hard || fromS.y > h - hard;
+      const band = soft;
+      const rate = fromPinned ? 0.18 : 0.1;
+      let extended = false;
+      if (cy > h - band) {
+        const pressure = Math.min(1, (cy - (h - band)) / band);
+        stroke.tipWorld.y += rate * Math.max(0.05, pressure);
+        extended = true;
+      } else if (cy < band) {
+        const pressure = Math.min(1, (band - cy) / band);
+        stroke.tipWorld.y -= rate * Math.max(0.05, pressure);
+        extended = true;
+      }
+      if (cx > w - band) {
+        const pressure = Math.min(1, (cx - (w - band)) / band);
+        stroke.tipWorld.x += rate * Math.max(0.05, pressure);
+        extended = true;
+      } else if (cx < band) {
+        const pressure = Math.min(1, (band - cx) / band);
+        stroke.tipWorld.x -= rate * Math.max(0.05, pressure);
+        extended = true;
+      }
+      if (extended) this._fitTouchDrawCamera(from, stroke.tipWorld, { cx, cy });
+    }
 
     const under = stroke.tipWorld;
     this._updateAdaptiveSnap(under.x, under.y, {
