@@ -44,6 +44,9 @@ export const VALIDATION = {
 /** Мин. ширина/высота видимого клипа — ≤ этого не укладываем (зазор закрывают обрезками) */
 export const MIN_PANEL_FRAGMENT = 0.05;
 
+/** Макс. число резов одного листа 55×75 — иначе монтаж превращается в мозаику */
+export const MAX_PANEL_CUTS = 3;
+
 /** @deprecated используйте MIN_PANEL_FRAGMENT */
 export const MIN_WALL_PANEL_FRAGMENT = MIN_PANEL_FRAGMENT;
 

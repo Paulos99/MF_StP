@@ -3,6 +3,7 @@
   OPENING_TYPES,
   RESERVES,
   MIN_PANEL_FRAGMENT,
+  MAX_PANEL_CUTS,
 } from '../core/constants.js';
 import {
   subtractOpeningsFromRect,
@@ -19,6 +20,11 @@ import { Panel, Orientation } from './ceiling-calculator.js';
  * Укладка панелей на одной стене (развёртка: X — длина стены, Y — высота от пола).
  * Приоритет: максимум целых → минимум подрезанных → меньше панелей всего.
  * Старт предпочтительно от пола; сетка может сдвигаться под края проёмов.
+ *
+ * Правила:
+ * — полосы ≤5 см не кладём (закрывают обрезками на объекте);
+ * — лист 55×75 нельзя «раздувать»; целые панели не трогаем ради щепок;
+ * — одну панель режем не больше MAX_PANEL_CUTS раз.
  */
 export class WallSurfaceCalculator {
   constructor(wallLength, wallHeight, openings = [], wallId = '', wallLabel = '') {
@@ -62,6 +68,29 @@ export class WallSurfaceCalculator {
     );
   }
 
+  panelFullSize(orientation) {
+    if (orientation === Orientation.HORIZONTAL) {
+      return { w: this.panelLength, h: this.panelWidth };
+    }
+    return { w: this.panelWidth, h: this.panelLength };
+  }
+
+  /**
+   * Оценка числа резов от целого листа до формы parts:
+   * подрезка AABB по каждой оси + по одному резу на каждый доп. прямоугольник (Г/У).
+   */
+  estimateCuts(parts, orientation) {
+    const coalesced = coalesceRects(parts);
+    if (!coalesced.length) return 0;
+    const aabb = boundsOfRects(coalesced);
+    const full = this.panelFullSize(orientation);
+    let cuts = 0;
+    if (Math.abs(aabb.w - full.w) > 1e-4) cuts += 1;
+    if (Math.abs(aabb.h - full.h) > 1e-4) cuts += 1;
+    if (coalesced.length > 1) cuts += coalesced.length - 1;
+    return cuts;
+  }
+
   panelMeta(extra = {}) {
     return {
       wallId: this.wallId,
@@ -70,31 +99,44 @@ export class WallSurfaceCalculator {
     };
   }
 
+  _pushRectPanels(result, rects, orientation) {
+    for (const part of rects) {
+      if (!this.isFragmentWorthPlacing(part)) continue;
+      const isCut = !this.isFullPanel(part.w, part.h, orientation);
+      result.push(
+        new Panel(part.x, part.y, part.w, part.h, orientation, 0, isCut, this.panelMeta())
+      );
+    }
+  }
+
   /** Связные компоненты слота минус проёмы → одна панель на компонент (Г = 1 панель) */
   panelsFromCell(cell, openings, orientation) {
-    // Все положительные остатки кладём: тонкие полоски у проёмов иначе
-    // остаются пустыми «дырами» на схеме (раньше отбрасывали ≤5 см).
-    const raw = subtractOpeningsFromRect(cell, openings);
+    const raw = subtractOpeningsFromRect(cell, openings).filter((p) =>
+      this.isFragmentWorthPlacing(p)
+    );
     if (!raw.length) return [];
 
     const components = groupConnectedRects(raw);
     const result = [];
 
     for (const parts of components) {
-      if (!parts.length) continue;
+      const filtered = parts.filter((p) => this.isFragmentWorthPlacing(p));
+      if (!filtered.length) continue;
 
-      if (!fitsInPanelSize(parts, this.panelLength, this.panelWidth)) {
-        for (const part of parts) {
-          const isCut = !this.isFullPanel(part.w, part.h, orientation);
-          result.push(
-            new Panel(part.x, part.y, part.w, part.h, orientation, 0, isCut, this.panelMeta())
-          );
-        }
+      if (!fitsInPanelSize(filtered, this.panelLength, this.panelWidth)) {
+        // Не влезает в один лист — отдельные прямоугольники (без мозаики)
+        this._pushRectPanels(result, filtered, orientation);
         continue;
       }
 
-      const aabb = boundsOfRects(parts);
-      const coalesced = coalesceRects(parts);
+      const coalesced = coalesceRects(filtered);
+      if (this.estimateCuts(coalesced, orientation) > MAX_PANEL_CUTS) {
+        // Слишком много резов — лучше несколько простых подрезок
+        this._pushRectPanels(result, coalesced, orientation);
+        continue;
+      }
+
+      const aabb = boundsOfRects(coalesced);
       const isCut =
         coalesced.length > 1 ||
         !this.isFullPanel(aabb.w, aabb.h, orientation) ||
@@ -121,12 +163,11 @@ export class WallSurfaceCalculator {
 
   /**
    * Остановки оси с отступом startPad слева/снизу:
-   * любой положительный pad/остаток кладём (в т.ч. &lt;5 см), иначе у проёмов
-   * и краёв стены остаются пустые полосы на схеме.
+   * зазор ≤5 см не кладём; далее целые слоты; остаток >5 см — cut.
    */
   _axisStops(total, slotSize, startPad = 0) {
     const stops = [];
-    if (total < 1e-6) return stops;
+    if (total < MIN_PANEL_FRAGMENT - 1e-6) return stops;
 
     let pad = startPad;
     if (pad < 0) pad = 0;
@@ -135,8 +176,11 @@ export class WallSurfaceCalculator {
     if (pad >= slotSize - 1e-9) pad %= slotSize;
 
     let pos = 0;
-    if (pad > 1e-6) {
+    if (pad > MIN_PANEL_FRAGMENT + 1e-9) {
       stops.push({ start: 0, size: pad });
+      pos = pad;
+    } else if (pad > 1e-6) {
+      // ≤5 см — технологический зазор, целые начинаются после него
       pos = pad;
     }
 
@@ -145,7 +189,7 @@ export class WallSurfaceCalculator {
       pos += slotSize;
     }
     const rem = total - pos;
-    if (rem > 1e-6) {
+    if (rem > MIN_PANEL_FRAGMENT + 1e-9) {
       stops.push({ start: pos, size: rem });
     }
     return stops;
@@ -184,8 +228,7 @@ export class WallSurfaceCalculator {
     }
 
     const merged = this.mergeAdjacentPanels(panels, openings, orientation);
-    const absorbed = this.absorbSliverPanels(merged, orientation);
-    return this._finalizePanels(absorbed);
+    return this._finalizePanels(merged);
   }
 
   panelsTouch(a, b) {
@@ -197,71 +240,17 @@ export class WallSurfaceCalculator {
     return false;
   }
 
-  /** Панель-щепка: мин. сторона ≤5 см — номер на схеме не помещается. */
-  isSliverPanel(panel) {
-    const parts = typeof panel.getParts === 'function'
-      ? panel.getParts()
-      : [{ x: panel.x, y: panel.y, w: panel.width, h: panel.height }];
-    if (!parts.length) return true;
-    const b = boundsOfRects(parts);
-    return Math.min(b.w, b.h) <= MIN_PANEL_FRAGMENT + 1e-9;
-  }
-
-  /**
-   * Щепки у проёмов вливаются в соседа (без лимита 75×55), чтобы на схеме
-   * не было «пропавших» номеров на невидимых узких полосках.
-   */
-  absorbSliverPanels(panels, orientation) {
-    let list = panels.slice();
-    const unblockable = new WeakSet();
-    let guard = 0;
-    while (guard++ < 500) {
-      const si = list.findIndex((p) => this.isSliverPanel(p) && !unblockable.has(p));
-      if (si < 0) break;
-
-      const sliver = list[si];
-      let bestJ = -1;
-      let bestArea = -1;
-      for (let j = 0; j < list.length; j++) {
-        if (j === si) continue;
-        if (!this.panelsTouch(sliver, list[j])) continue;
-        const area = list[j].getArea?.() ?? list[j].width * list[j].height;
-        if (area > bestArea) {
-          bestArea = area;
-          bestJ = j;
-        }
-      }
-
-      if (bestJ < 0) {
-        unblockable.add(sliver);
-        continue;
-      }
-
-      const merged = this.mergeTwoPanels(sliver, list[bestJ], orientation);
-      if (!merged) {
-        unblockable.add(sliver);
-        continue;
-      }
-
-      const next = [];
-      for (let k = 0; k < list.length; k++) {
-        if (k === si || k === bestJ) continue;
-        next.push(list[k]);
-      }
-      next.push(merged);
-      list = next;
-    }
-    return list;
-  }
-
   canMergePanels(a, b, openings) {
-    // Две целые не склеиваем
-    if (!a.isCut && !b.isCut) return false;
+    // Целые 55×75 не трогаем — мелкие обрезки только из уже подрезанных
+    if (!a.isCut || !b.isCut) return false;
     if (!this.panelsTouch(a, b)) return false;
 
     const parts = coalesceRects([...a.getParts(), ...b.getParts()]);
     if (!fitsInPanelSize(parts, this.panelLength, this.panelWidth)) return false;
     if (!partsFillFreeAabb(parts, openings)) return false;
+
+    const orient = a.orientation || b.orientation;
+    if (this.estimateCuts(parts, orient) > MAX_PANEL_CUTS) return false;
     return true;
   }
 
@@ -284,8 +273,8 @@ export class WallSurfaceCalculator {
   }
 
   /**
-   * Жадно склеивает соседние подрезки, если вместе влезают в одну 75×55.
-   * Убирает лишние швы сетки (101–104 → одна; 106+107 → одна Г/полоса).
+   * Жадно склеивает соседние подрезки, если вместе влезают в одну 75×55
+   * и получается ≤ MAX_PANEL_CUTS резов. Целые панели не трогаем.
    */
   mergeAdjacentPanels(panels, openings, orientation) {
     let list = panels.slice();
@@ -301,15 +290,9 @@ export class WallSurfaceCalculator {
           if (!this.canMergePanels(list[i], list[j], openings)) continue;
           const merged = this.mergeTwoPanels(list[i], list[j], orientation);
           if (!merged) continue;
-          // Предпочитаем склейку, дающую целую панель, затем большую площадь
-          const gainFull = merged.isCut ? 0 : 1;
           const area = merged.getArea();
-          if (
-            !best ||
-            gainFull > best.gainFull ||
-            (gainFull === best.gainFull && area > best.area)
-          ) {
-            best = { i, j, merged, gainFull, area };
+          if (!best || area > best.area) {
+            best = { i, j, merged, area };
           }
         }
       }
