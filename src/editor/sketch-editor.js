@@ -643,30 +643,38 @@ export class SketchEditor {
     return true;
   }
 
-  _pushHistory() {
-    this.history.push({
+  _snapshotState() {
+    return {
       vertices: cloneVertices(this.vertices),
       edgeDimensions: { ...this.edgeDimensions },
       diagonalDimensions: { ...this.diagonalDimensions },
       closed: this.closed,
-    });
+    };
+  }
+
+  _pushHistory() {
+    this.history.push(this._snapshotState());
     if (this.history.length > 50) this.history.shift();
     this.future = [];
   }
 
   undo() {
-    if (!this.history.length) return;
-    this.future.push({
-      vertices: cloneVertices(this.vertices),
-      edgeDimensions: { ...this.edgeDimensions },
-      diagonalDimensions: { ...this.diagonalDimensions },
-      closed: this.closed,
-    });
+    if (!this.history.length || this.geometryLocked) return;
+    this.future.push(this._snapshotState());
     const prev = this.history.pop();
     this.vertices = prev.vertices;
     this.edgeDimensions = prev.edgeDimensions;
     this.diagonalDimensions = prev.diagonalDimensions;
     this.closed = prev.closed;
+    this._drawStroke = null;
+    this._previewPoint = null;
+    this._previewSmooth = null;
+    this._previewTarget = null;
+    this._drawHistorySaved = this.vertices.length > 0;
+    this._selectedEdge = null;
+    this._selectedDiagonal = null;
+    this.keypad?.hide?.();
+    this._hideEdgeActions?.();
     this._syncRoomFromShape();
     if (this.closed) {
       this._markGeometryEditing('undo');
@@ -679,13 +687,24 @@ export class SketchEditor {
   }
 
   redo() {
-    if (!this.future.length) return;
-    this._pushHistory();
+    if (!this.future.length || this.geometryLocked) return;
+    // Save current without clearing the redo stack
+    this.history.push(this._snapshotState());
+    if (this.history.length > 50) this.history.shift();
     const next = this.future.pop();
     this.vertices = next.vertices;
     this.edgeDimensions = next.edgeDimensions;
     this.diagonalDimensions = next.diagonalDimensions;
     this.closed = next.closed;
+    this._drawStroke = null;
+    this._previewPoint = null;
+    this._previewSmooth = null;
+    this._previewTarget = null;
+    this._drawHistorySaved = this.vertices.length > 0;
+    this._selectedEdge = null;
+    this._selectedDiagonal = null;
+    this.keypad?.hide?.();
+    this._hideEdgeActions?.();
     this._syncRoomFromShape();
     if (this.closed) {
       this._markGeometryEditing('redo');
@@ -1205,14 +1224,15 @@ export class SketchEditor {
     if (!this._isInteractive() || this.openingsModalOpen) return;
     if (e.key === 'Backspace' && !this.closed && this.vertices.length > 0) {
       e.preventDefault();
-      if (!this._drawHistorySaved) {
-        this._pushHistory();
-        this._drawHistorySaved = true;
-      }
+      this._pushHistory();
       this.vertices.pop();
       this._previewPoint = null;
+      this._previewSmooth = null;
+      this._previewTarget = null;
+      this._drawStroke = null;
       if (!this.vertices.length) this._drawHistorySaved = false;
       this.render();
+      this._updateUi();
     }
   }
 
@@ -1481,10 +1501,8 @@ export class SketchEditor {
     }
 
     if (this._isTooCloseToExisting(tip.x, tip.y)) return false;
-    if (!this._drawHistorySaved) {
-      this._pushHistory();
-      this._drawHistorySaved = true;
-    }
+    this._pushHistory();
+    this._drawHistorySaved = true;
     this.vertices.push({
       x: tip.x,
       y: tip.y,
@@ -1886,10 +1904,8 @@ export class SketchEditor {
         snapped = snapPointDraw(w.x, w.y, from, step);
       }
       if (this._isTooCloseToExisting(snapped.x, snapped.y)) return;
-      if (!this._drawHistorySaved) {
-        this._pushHistory();
-        this._drawHistorySaved = true;
-      }
+      this._pushHistory();
+      this._drawHistorySaved = true;
       this.vertices.push({ x: snapped.x, y: snapped.y, label: labelForIndex(this.vertices.length) });
       this._previewPoint = null;
       this._previewSmooth = null;
@@ -2642,6 +2658,10 @@ export class SketchEditor {
   _updateUi() {
     if (this.doneBtn) this.doneBtn.disabled = !this._canSave();
     if (this.openingsBtn) this.openingsBtn.disabled = !this.closed;
+    const undoBtn = this._q('#sketchUndoBtn');
+    const redoBtn = this._q('#sketchRedoBtn');
+    if (undoBtn && !this.geometryLocked) undoBtn.disabled = !this.history.length;
+    if (redoBtn && !this.geometryLocked) redoBtn.disabled = !this.future.length;
 
     let bottomText = '—';
     const touchUi = this._isCoarsePointer() || window.matchMedia?.('(max-width: 899px)')?.matches;
