@@ -39,6 +39,7 @@ const GRID_COLOR = 'rgba(0, 0, 0, 0.14)';
 const GRID_MAJOR_COLOR = 'rgba(0, 0, 0, 0.22)';
 const PX_PER_M = 40;
 const MIN_ZOOM = 0.1;
+const DRAW_STROKE_MIN_ZOOM = 0.08;
 const MAX_ZOOM = 4;
 const LONG_PRESS_MS = 500;
 const TOUCH_PAN_THRESHOLD = 12;
@@ -1261,8 +1262,7 @@ export class SketchEditor {
   }
 
   /**
-   * Begin rubber-band: tip is the world point under the finger.
-   * Camera stays put during the stroke (model B); pan/zoom only via pinch.
+   * Begin rubber-band: tip under finger; camera auto-frames both endpoints.
    */
   _beginTouchDrawStroke(clientX, clientY) {
     const from = this.vertices[this.vertices.length - 1];
@@ -1270,19 +1270,75 @@ export class SketchEditor {
     this._drawStroke = {
       from: { x: from.x, y: from.y },
       tipWorld: { x: from.x, y: from.y },
+      baseZoom: this.zoom,
     };
     this._applyTouchDrawTip(clientX, clientY);
   }
 
-  /** Tip = snapped world under finger; camera does not move mid-stroke. */
+  /**
+   * Auto-frame wall segment so both endpoints stay visible.
+   * Midpoint pan + zoom-out as span grows; tip is recomputed under the finger afterwards.
+   * @param {{ x: number, y: number }} from
+   * @param {{ x: number, y: number }} tipWorld
+   */
+  _fitTouchDrawCamera(from, tipWorld) {
+    const { w, h } = this._getCanvasSize();
+    if (w < 8 || h < 8) return;
+
+    const span = Math.max(Math.hypot(tipWorld.x - from.x, tipWorld.y - from.y), 0.35);
+    const baseZoom = this._drawStroke?.baseZoom ?? this.zoom;
+    const padM = Math.max(0.85, span * 0.16);
+    const boxW = Math.max(Math.abs(tipWorld.x - from.x), 0.3) + padM * 2;
+    const boxH = Math.max(Math.abs(tipWorld.y - from.y), 0.3) + padM * 2;
+
+    let desired = Math.min(w / (boxW * PX_PER_M), h / (boxH * PX_PER_M)) * 0.88;
+    desired = Math.max(DRAW_STROKE_MIN_ZOOM, Math.min(baseZoom, desired));
+
+    const zoomingOut = desired < this.zoom - 1e-4;
+    const lerp = zoomingOut
+      ? (span >= 8 ? 0.42 : 0.3)
+      : 0.14;
+    this.zoom = this.zoom + (desired - this.zoom) * lerp;
+    this.zoom = Math.max(DRAW_STROKE_MIN_ZOOM, Math.min(MAX_ZOOM, this.zoom));
+
+    const midX = (from.x + tipWorld.x) / 2;
+    const midY = (from.y + tipWorld.y) / 2;
+    const targetPanX = w / 2 - midX * PX_PER_M * this.zoom;
+    const targetPanY = h / 2 - midY * PX_PER_M * this.zoom;
+    const panLerp = zoomingOut ? 0.55 : 0.28;
+    this.panX = this.panX + (targetPanX - this.panX) * panLerp;
+    this.panY = this.panY + (targetPanY - this.panY) * panLerp;
+
+    // Safety: if either endpoint is still clipped, ease zoom out and recentre
+    const margin = Math.max(24, Math.min(w, h) * 0.06);
+    const a = this.worldToCanvas(from.x, from.y);
+    const b = this.worldToCanvas(tipWorld.x, tipWorld.y);
+    const out =
+      a.x < margin || a.x > w - margin || a.y < margin || a.y > h - margin
+      || b.x < margin || b.x > w - margin || b.y < margin || b.y > h - margin;
+    if (out) {
+      this.zoom = Math.max(DRAW_STROKE_MIN_ZOOM, this.zoom * 0.88);
+      this.panX = w / 2 - midX * PX_PER_M * this.zoom;
+      this.panY = h / 2 - midY * PX_PER_M * this.zoom;
+    }
+  }
+
+  /** Tip under finger; camera eases so from + tip stay in frame (walls up to ~40 m). */
   _applyTouchDrawTip(clientX, clientY) {
     const stroke = this._drawStroke;
     const from = this.vertices[this.vertices.length - 1];
     if (!stroke || !from) return;
 
     const { cx, cy } = this._clientToCanvas(clientX, clientY);
-    const under = this.canvasToWorld(cx, cy);
     stroke.from = { x: from.x, y: from.y };
+
+    // 2 iterations: fit → tip under finger may lengthen → fit again
+    let under = this.canvasToWorld(cx, cy);
+    for (let i = 0; i < 2; i++) {
+      stroke.tipWorld = { x: under.x, y: under.y };
+      this._fitTouchDrawCamera(from, stroke.tipWorld);
+      under = this.canvasToWorld(cx, cy);
+    }
     stroke.tipWorld = { x: under.x, y: under.y };
 
     this._updateAdaptiveSnap(under.x, under.y, {
