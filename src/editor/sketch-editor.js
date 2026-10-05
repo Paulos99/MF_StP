@@ -18,6 +18,7 @@ import {
   shoelaceArea,
   getPerimeter,
   resolveAdaptiveDrawStep,
+  resizeEdgePreserveShape,
   shouldFineZoom,
   snapPoint,
   snapPointDraw,
@@ -2387,8 +2388,7 @@ export class SketchEditor {
   _onKeypadConfirm(val) {
     if (this._selectedEdge !== null) {
       this._pushHistory();
-      this.edgeDimensions[this._selectedEdge] = val;
-      this.vertices = solvePolygonFromConstraints(this.vertices, this.edgeDimensions, this.diagonalDimensions);
+      this.vertices = resizeEdgePreserveShape(this.vertices, this._selectedEdge, val);
       this.edgeDimensions = buildEdgeDimensionsFromVertices(this.vertices);
       this._syncRoomFromShape();
       this._markGeometryEditing('size');

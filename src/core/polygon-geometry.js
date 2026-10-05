@@ -362,6 +362,40 @@ export function setEdgeLength(vertices, edgeIndex, targetLength) {
   return result;
 }
 
+/** Move the half of the polygon "ahead" of edge start so one side grows without warping angles. */
+export function resizeEdgePreserveShape(vertices, edgeIndex, targetLength) {
+  const result = cloneVertices(vertices);
+  const n = result.length;
+  if (n < 3 || edgeIndex < 0 || edgeIndex >= n || !(targetLength > 0)) return result;
+
+  const i = edgeIndex;
+  const j = (i + 1) % n;
+  const vi = result[i];
+  const vj = result[j];
+  const oldLen = edgeLength(vi, vj);
+  if (oldLen < 1e-9) return result;
+
+  const ux = (vj.x - vi.x) / oldLen;
+  const uy = (vj.y - vi.y) / oldLen;
+  const deltaScale = targetLength - oldLen;
+  const dx = ux * deltaScale;
+  const dy = uy * deltaScale;
+  if (Math.abs(dx) < 1e-12 && Math.abs(dy) < 1e-12) return result;
+
+  for (let k = 0; k < n; k++) {
+    const vk = result[k];
+    const proj = (vk.x - vi.x) * ux + (vk.y - vi.y) * uy;
+    if (proj > 1e-6) {
+      result[k] = {
+        ...vk,
+        x: roundMeters(vk.x + dx),
+        y: roundMeters(vk.y + dy),
+      };
+    }
+  }
+  return result;
+}
+
 export function solvePolygonFromConstraints(vertices, edgeTargets = {}, diagonalTargets = {}) {
   let result = cloneVertices(vertices);
   const edgeIndices = Object.keys(edgeTargets).map(Number);
