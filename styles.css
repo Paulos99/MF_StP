@@ -7846,10 +7846,6 @@ body.theme-dark .results-drawer-backdrop {
         width: 100%;
     }
 
-    .sketch-inline.is-fullscreen.is-mobile-step #sketchFitBtn {
-        display: none;
-    }
-
     /* Keypad stays above bottom chrome inside canvas */
     .sketch-inline.is-fullscreen.is-mobile-step #sketchKeypadHost {
         bottom: 12px;
