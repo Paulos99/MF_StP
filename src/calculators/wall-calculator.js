@@ -3,7 +3,6 @@
   OPENING_TYPES,
   RESERVES,
   MIN_PANEL_FRAGMENT,
-  MAX_PANEL_CUTS,
 } from '../core/constants.js';
 import {
   subtractOpeningsFromRect,
@@ -18,12 +17,8 @@ import { Panel, Orientation } from './ceiling-calculator.js';
 
 /**
  * Укладка панелей на одной стене (развёртка: X — длина стены, Y — высота от пола).
- * Выбирается раскладка с минимумом подрезок и максимумом целых листов при аккуратной сетке.
- *
- * Правила:
- * — полосы ≤5 см не кладём (закрывают обрезками на объекте);
- * — лист 55×75 нельзя «раздувать»; целые панели не трогаем ради щепок;
- * — одну панель режем не больше MAX_PANEL_CUTS раз.
+ * Приоритет: максимум целых → минимум подрезанных → меньше панелей всего.
+ * Старт предпочтительно от пола; сетка может сдвигаться под края проёмов.
  */
 export class WallSurfaceCalculator {
   constructor(wallLength, wallHeight, openings = [], wallId = '', wallLabel = '') {
@@ -67,45 +62,12 @@ export class WallSurfaceCalculator {
     );
   }
 
-  panelFullSize(orientation) {
-    if (orientation === Orientation.HORIZONTAL) {
-      return { w: this.panelLength, h: this.panelWidth };
-    }
-    return { w: this.panelWidth, h: this.panelLength };
-  }
-
-  /**
-   * Оценка числа резов от целого листа до формы parts:
-   * подрезка AABB по каждой оси + по одному резу на каждый доп. прямоугольник (Г/У).
-   */
-  estimateCuts(parts, orientation) {
-    const coalesced = coalesceRects(parts);
-    if (!coalesced.length) return 0;
-    const aabb = boundsOfRects(coalesced);
-    const full = this.panelFullSize(orientation);
-    let cuts = 0;
-    if (Math.abs(aabb.w - full.w) > 1e-4) cuts += 1;
-    if (Math.abs(aabb.h - full.h) > 1e-4) cuts += 1;
-    if (coalesced.length > 1) cuts += coalesced.length - 1;
-    return cuts;
-  }
-
   panelMeta(extra = {}) {
     return {
       wallId: this.wallId,
       wallLabel: this.wallLabel,
       ...extra,
     };
-  }
-
-  _pushRectPanels(result, rects, orientation) {
-    for (const part of rects) {
-      if (!this.isFragmentWorthPlacing(part)) continue;
-      const isCut = !this.isFullPanel(part.w, part.h, orientation);
-      result.push(
-        new Panel(part.x, part.y, part.w, part.h, orientation, 0, isCut, this.panelMeta())
-      );
-    }
   }
 
   /** Связные компоненты слота минус проёмы → одна панель на компонент (Г = 1 панель) */
@@ -123,19 +85,17 @@ export class WallSurfaceCalculator {
       if (!filtered.length) continue;
 
       if (!fitsInPanelSize(filtered, this.panelLength, this.panelWidth)) {
-        // Не влезает в один лист — отдельные прямоугольники (без мозаики)
-        this._pushRectPanels(result, filtered, orientation);
+        for (const part of filtered) {
+          const isCut = !this.isFullPanel(part.w, part.h, orientation);
+          result.push(
+            new Panel(part.x, part.y, part.w, part.h, orientation, 0, isCut, this.panelMeta())
+          );
+        }
         continue;
       }
 
+      const aabb = boundsOfRects(filtered);
       const coalesced = coalesceRects(filtered);
-      if (this.estimateCuts(coalesced, orientation) > MAX_PANEL_CUTS) {
-        // Слишком много резов — лучше несколько простых подрезок
-        this._pushRectPanels(result, coalesced, orientation);
-        continue;
-      }
-
-      const aabb = boundsOfRects(coalesced);
       const isCut =
         coalesced.length > 1 ||
         !this.isFullPanel(aabb.w, aabb.h, orientation) ||
@@ -162,7 +122,7 @@ export class WallSurfaceCalculator {
 
   /**
    * Остановки оси с отступом startPad слева/снизу:
-   * зазор ≤5 см не кладём; далее целые слоты; остаток >5 см — cut.
+   * зазор &lt;5 см не кладём; далее целые слоты; остаток ≥5 см — cut.
    */
   _axisStops(total, slotSize, startPad = 0) {
     const stops = [];
@@ -240,16 +200,13 @@ export class WallSurfaceCalculator {
   }
 
   canMergePanels(a, b, openings) {
-    // Целые 55×75 не трогаем — мелкие обрезки только из уже подрезанных
-    if (!a.isCut || !b.isCut) return false;
+    // Две целые не склеиваем
+    if (!a.isCut && !b.isCut) return false;
     if (!this.panelsTouch(a, b)) return false;
 
     const parts = coalesceRects([...a.getParts(), ...b.getParts()]);
     if (!fitsInPanelSize(parts, this.panelLength, this.panelWidth)) return false;
     if (!partsFillFreeAabb(parts, openings)) return false;
-
-    const orient = a.orientation || b.orientation;
-    if (this.estimateCuts(parts, orient) > MAX_PANEL_CUTS) return false;
     return true;
   }
 
@@ -272,8 +229,8 @@ export class WallSurfaceCalculator {
   }
 
   /**
-   * Жадно склеивает соседние подрезки, если вместе влезают в одну 75×55
-   * и получается ≤ MAX_PANEL_CUTS резов. Целые панели не трогаем.
+   * Жадно склеивает соседние подрезки, если вместе влезают в одну 75×55.
+   * Убирает лишние швы сетки (101–104 → одна; 106+107 → одна Г/полоса).
    */
   mergeAdjacentPanels(panels, openings, orientation) {
     let list = panels.slice();
@@ -289,9 +246,15 @@ export class WallSurfaceCalculator {
           if (!this.canMergePanels(list[i], list[j], openings)) continue;
           const merged = this.mergeTwoPanels(list[i], list[j], orientation);
           if (!merged) continue;
+          // Предпочитаем склейку, дающую целую панель, затем большую площадь
+          const gainFull = merged.isCut ? 0 : 1;
           const area = merged.getArea();
-          if (!best || area > best.area) {
-            best = { i, j, merged, area };
+          if (
+            !best ||
+            gainFull > best.gainFull ||
+            (gainFull === best.gainFull && area > best.area)
+          ) {
+            best = { i, j, merged, gainFull, area };
           }
         }
       }
@@ -338,52 +301,28 @@ export class WallSurfaceCalculator {
     return false;
   }
 
-  scoreLayout(panels, openings, { padX = 0, padY = 0 } = {}) {
+  scoreLayout(panels, openings) {
     const fullPanels = panels.filter((p) => !p.isCut).length;
     const cutPanels = panels.filter((p) => p.isCut).length;
     const total = panels.length;
     const openingTouches = this.countOpeningTouches(panels, openings);
+    // Доп. штраф за составные (Г) — это всё же подрезка
     const multiPart = panels.filter((p) => p.parts && p.parts.length > 1).length;
-    let totalCuts = 0;
-    let complexCuts = 0;
-    for (const p of panels) {
-      if (!p.isCut) continue;
-      const cuts = this.estimateCuts(p.getParts(), p.orientation);
-      totalCuts += cuts;
-      if (cuts >= 2) complexCuts += 1;
-    }
-    return {
-      fullPanels,
-      cutPanels,
-      total,
-      totalCuts,
-      multiPart,
-      complexCuts,
-      openingTouches,
-      padX,
-      padY,
-    };
+    return { fullPanels, cutPanels, total, openingTouches, multiPart };
   }
 
   /**
-   * Выбор раскладки (удобство монтажа важнее сжатия закупки):
-   * 1) меньше подрезанных панелей — не резать 80% листов
-   * 2) больше целых
-   * 3) меньше суммарных резов / сложных форм
-   * 4) меньше панелей всего
-   * 5) ровнее сетка: от пола, затем от левого края
+   * 1) больше целых
+   * 2) меньше подрезанных
+   * 3) меньше панелей всего
+   * 4) меньше касаний проёмов / составных
    */
   compareScores(a, b) {
-    if (a.cutPanels !== b.cutPanels) return a.cutPanels - b.cutPanels;
     if (a.fullPanels !== b.fullPanels) return b.fullPanels - a.fullPanels;
-    if (a.totalCuts !== b.totalCuts) return a.totalCuts - b.totalCuts;
-    if (a.complexCuts !== b.complexCuts) return a.complexCuts - b.complexCuts;
-    if (a.multiPart !== b.multiPart) return a.multiPart - b.multiPart;
+    if (a.cutPanels !== b.cutPanels) return a.cutPanels - b.cutPanels;
     if (a.total !== b.total) return a.total - b.total;
-    if (a.openingTouches !== b.openingTouches) return a.openingTouches - b.openingTouches;
-    if (a.padY !== b.padY) return a.padY - b.padY;
-    if (a.padX !== b.padX) return a.padX - b.padX;
-    return 0;
+    if (a.multiPart !== b.multiPart) return a.multiPart - b.multiPart;
+    return a.openingTouches - b.openingTouches;
   }
 
   _finalizePanels(panels) {
@@ -420,7 +359,7 @@ export class WallSurfaceCalculator {
       for (const padX of padsX) {
         for (const padY of padsY) {
           const panels = this.buildLayout(orientation, padX, padY);
-          const score = this.scoreLayout(panels, openings, { padX, padY });
+          const score = this.scoreLayout(panels, openings);
           if (!bestScore || this.compareScores(score, bestScore) < 0) {
             best = panels;
             bestScore = score;
