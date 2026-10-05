@@ -121,8 +121,10 @@ export class WallSurfaceCalculator {
   }
 
   /**
-   * Остановки оси с отступом startPad слева/снизу:
-   * зазор &lt;5 см не кладём; далее целые слоты; остаток ≥5 см — cut.
+   * Остановки оси с отступом startPad слева/снизу.
+   * Целые панели кладём от края стены/пола: pad ≤5 см не сдвигает сетку
+   * (иначе белая полоса у края). Остаток ≤5 см не оставляем дырой —
+   * его дотягивают подрезанные панели на краю (expandCutPanelsIntoThinGaps).
    */
   _axisStops(total, slotSize, startPad = 0) {
     const stops = [];
@@ -131,17 +133,14 @@ export class WallSurfaceCalculator {
     let pad = startPad;
     if (pad < 0) pad = 0;
     if (pad > total) pad = total;
-    // Нормализуем в [0, slotSize)
     if (pad >= slotSize - 1e-9) pad %= slotSize;
 
     let pos = 0;
     if (pad > MIN_PANEL_FRAGMENT + 1e-9) {
       stops.push({ start: 0, size: pad });
       pos = pad;
-    } else if (pad > 1e-6) {
-      // ≤5 см — технологический зазор, целые начинаются после него
-      pos = pad;
     }
+    // pad ≤5 см игнорируем — старт заподлицо с краем (0)
 
     while (pos + slotSize <= total + 1e-9) {
       stops.push({ start: pos, size: slotSize });
@@ -151,10 +150,11 @@ export class WallSurfaceCalculator {
     if (rem > MIN_PANEL_FRAGMENT + 1e-9) {
       stops.push({ start: pos, size: rem });
     }
+    // rem ≤5 см не кладём отдельным слотом — закроет expand к краю стены
     return stops;
   }
 
-  /** Кандидаты сдвига: 0, остаток с противоположной стороны, края проёмов */
+  /** Кандидаты сдвига: 0, крупный остаток, края проёмов. Мелкий pad ≤5 см не берём. */
   _offsetCandidates(total, slotSize, edges) {
     const set = new Set([0]);
     const fullCount = Math.floor((total + 1e-9) / slotSize);
@@ -165,7 +165,8 @@ export class WallSurfaceCalculator {
     for (const edge of edges) {
       if (!Number.isFinite(edge)) continue;
       if (edge <= 1e-6 || edge >= total - 1e-6) continue;
-      set.add(+(edge % slotSize).toFixed(6));
+      const p = +(edge % slotSize).toFixed(6);
+      if (p > MIN_PANEL_FRAGMENT + 1e-9) set.add(p);
     }
     return [...set].filter((v) => v >= -1e-9 && v < slotSize - 1e-9);
   }
@@ -187,7 +188,7 @@ export class WallSurfaceCalculator {
     }
 
     const merged = this.mergeAdjacentPanels(panels, openings, orientation);
-    const expanded = this.expandCutPanelsIntoThinOpeningGaps(merged, openings, orientation);
+    const expanded = this.expandCutPanelsIntoThinGaps(merged, openings, orientation);
     return this._finalizePanels(expanded);
   }
 
@@ -254,14 +255,69 @@ export class WallSurfaceCalculator {
   }
 
   /**
-   * Тонкий зазор ≤5 см между уже подрезанной панелью и проёмом
-   * дотягиваем этой панелью (целые 55×75 не трогаем, размер листа не превышаем).
-   * Как у окна: белая полоска сверху → в панели над проёмом.
+   * Тонкие зазоры ≤5 см у проёмов и у краёв стены дотягиваем уже подрезанными
+   * панелями (целые 55×75 не трогаем). Так у пола/стены не остаётся белых полос,
+   * а целые ряды идут от пола или от потолка / от стены.
    */
-  expandCutPanelsIntoThinOpeningGaps(panels, openings, orientation) {
-    if (!openings.length) return panels;
-
+  expandCutPanelsIntoThinGaps(panels, openings, orientation) {
     const list = panels.slice();
+    const wall = {
+      x: 0,
+      y: 0,
+      w: this.wallLength,
+      h: this.wallHeight,
+    };
+
+    const collectFillers = (parts, o) => {
+      const fillers = [];
+      for (const p of parts) {
+        const x1 = Math.max(p.x, o.x);
+        const x2 = Math.min(p.x + p.w, o.x + o.w);
+        const y1 = Math.max(p.y, o.y);
+        const y2 = Math.min(p.y + p.h, o.y + o.h);
+        const xOverlap = x2 - x1;
+        const yOverlap = y2 - y1;
+
+        const gapBelow = p.y - (o.y + o.h);
+        if (xOverlap > 1e-6 && gapBelow > 1e-9 && gapBelow <= MIN_PANEL_FRAGMENT + 1e-9) {
+          fillers.push({ x: x1, y: o.y + o.h, w: xOverlap, h: gapBelow });
+        }
+        const gapAbove = o.y - (p.y + p.h);
+        if (xOverlap > 1e-6 && gapAbove > 1e-9 && gapAbove <= MIN_PANEL_FRAGMENT + 1e-9) {
+          fillers.push({ x: x1, y: p.y + p.h, w: xOverlap, h: gapAbove });
+        }
+        const gapRight = o.x - (p.x + p.w);
+        if (yOverlap > 1e-6 && gapRight > 1e-9 && gapRight <= MIN_PANEL_FRAGMENT + 1e-9) {
+          fillers.push({ x: p.x + p.w, y: y1, w: gapRight, h: yOverlap });
+        }
+        const gapLeft = p.x - (o.x + o.w);
+        if (yOverlap > 1e-6 && gapLeft > 1e-9 && gapLeft <= MIN_PANEL_FRAGMENT + 1e-9) {
+          fillers.push({ x: o.x + o.w, y: y1, w: gapLeft, h: yOverlap });
+        }
+      }
+      return fillers;
+    };
+
+    // Зазор от подрезанной панели до пола / потолка / левой / правой стены
+    const wallFillersForPart = (p) => {
+      const fillers = [];
+      if (p.y > 1e-9 && p.y <= MIN_PANEL_FRAGMENT + 1e-9) {
+        fillers.push({ x: p.x, y: 0, w: p.w, h: p.y });
+      }
+      const topGap = wall.h - (p.y + p.h);
+      if (topGap > 1e-9 && topGap <= MIN_PANEL_FRAGMENT + 1e-9) {
+        fillers.push({ x: p.x, y: p.y + p.h, w: p.w, h: topGap });
+      }
+      if (p.x > 1e-9 && p.x <= MIN_PANEL_FRAGMENT + 1e-9) {
+        fillers.push({ x: 0, y: p.y, w: p.x, h: p.h });
+      }
+      const rightGap = wall.w - (p.x + p.w);
+      if (rightGap > 1e-9 && rightGap <= MIN_PANEL_FRAGMENT + 1e-9) {
+        fillers.push({ x: p.x + p.w, y: p.y, w: rightGap, h: p.h });
+      }
+      return fillers;
+    };
+
     let guard = 0;
     let changed = true;
     while (changed && guard++ < 100) {
@@ -272,45 +328,28 @@ export class WallSurfaceCalculator {
 
         let parts = panel.getParts().map((p) => ({ ...p }));
         let grown = false;
+        const fillers = [];
 
         for (const o of openings) {
-          const fillers = [];
-          for (const p of parts) {
-            const x1 = Math.max(p.x, o.x);
-            const x2 = Math.min(p.x + p.w, o.x + o.w);
-            const y1 = Math.max(p.y, o.y);
-            const y2 = Math.min(p.y + p.h, o.y + o.h);
-            const xOverlap = x2 - x1;
-            const yOverlap = y2 - y1;
+          fillers.push(...collectFillers(parts, o));
+        }
+        for (const p of parts) {
+          fillers.push(...wallFillersForPart(p));
+        }
 
-            const gapBelow = p.y - (o.y + o.h);
-            if (xOverlap > 1e-6 && gapBelow > 1e-9 && gapBelow <= MIN_PANEL_FRAGMENT + 1e-9) {
-              fillers.push({ x: x1, y: o.y + o.h, w: xOverlap, h: gapBelow });
-            }
-            const gapAbove = o.y - (p.y + p.h);
-            if (xOverlap > 1e-6 && gapAbove > 1e-9 && gapAbove <= MIN_PANEL_FRAGMENT + 1e-9) {
-              fillers.push({ x: x1, y: p.y + p.h, w: xOverlap, h: gapAbove });
-            }
-            const gapRight = o.x - (p.x + p.w);
-            if (yOverlap > 1e-6 && gapRight > 1e-9 && gapRight <= MIN_PANEL_FRAGMENT + 1e-9) {
-              fillers.push({ x: p.x + p.w, y: y1, w: gapRight, h: yOverlap });
-            }
-            const gapLeft = p.x - (o.x + o.w);
-            if (yOverlap > 1e-6 && gapLeft > 1e-9 && gapLeft <= MIN_PANEL_FRAGMENT + 1e-9) {
-              fillers.push({ x: o.x + o.w, y: y1, w: gapLeft, h: yOverlap });
-            }
-          }
-
-          for (const filler of fillers) {
-            const trial = coalesceRects([...parts, filler]);
-            if (!fitsInPanelSize(trial, this.panelLength, this.panelWidth)) continue;
-            // Г над углом проёма даёт дыру в AABB — partsFillFreeAabb тут не подходит
-            if (this._partsHitOpeningInterior(trial, openings)) continue;
-            const others = list.filter((_, j) => j !== i);
-            if (this._partsOverlapAny(trial, others)) continue;
-            parts = trial;
-            grown = true;
-          }
+        for (const filler of fillers) {
+          if (filler.w <= 1e-9 || filler.h <= 1e-9) continue;
+          const trial = coalesceRects([...parts, filler]);
+          if (!fitsInPanelSize(trial, this.panelLength, this.panelWidth)) continue;
+          if (this._partsHitOpeningInterior(trial, openings)) continue;
+          // Не вылезать за стену
+          const b = boundsOfRects(trial);
+          if (b.x < -1e-6 || b.y < -1e-6) continue;
+          if (b.x + b.w > wall.w + 1e-6 || b.y + b.h > wall.h + 1e-6) continue;
+          const others = list.filter((_, j) => j !== i);
+          if (this._partsOverlapAny(trial, others)) continue;
+          parts = trial;
+          grown = true;
         }
 
         if (!grown) continue;
@@ -402,23 +441,106 @@ export class WallSurfaceCalculator {
     return false;
   }
 
-  scoreLayout(panels, openings) {
+  /** Тонкие незакрытые полосы у пола/потолка/стен (м²), вне проёмов. */
+  measureThinEdgeGaps(panels, openings) {
+    const step = 0.05;
+    let area = 0;
+    const inOpening = (x, y) =>
+      openings.some((o) => x >= o.x && x < o.x + o.w && y >= o.y && y < o.y + o.h);
+
+    const coverMinY = (x) => {
+      let m = Infinity;
+      for (const p of panels) {
+        for (const r of p.getParts()) {
+          if (x >= r.x - 1e-9 && x < r.x + r.w - 1e-9) m = Math.min(m, r.y);
+        }
+      }
+      return m;
+    };
+    const coverMaxY = (x) => {
+      let m = -Infinity;
+      for (const p of panels) {
+        for (const r of p.getParts()) {
+          if (x >= r.x - 1e-9 && x < r.x + r.w - 1e-9) m = Math.max(m, r.y + r.h);
+        }
+      }
+      return m;
+    };
+    const coverMinX = (y) => {
+      let m = Infinity;
+      for (const p of panels) {
+        for (const r of p.getParts()) {
+          if (y >= r.y - 1e-9 && y < r.y + r.h - 1e-9) m = Math.min(m, r.x);
+        }
+      }
+      return m;
+    };
+    const coverMaxX = (y) => {
+      let m = -Infinity;
+      for (const p of panels) {
+        for (const r of p.getParts()) {
+          if (y >= r.y - 1e-9 && y < r.y + r.h - 1e-9) m = Math.max(m, r.x + r.w);
+        }
+      }
+      return m;
+    };
+
+    for (let x = step / 2; x < this.wallLength; x += step) {
+      if (!inOpening(x, step / 2)) {
+        const y0 = coverMinY(x);
+        if (y0 < Infinity && y0 > 1e-6 && y0 <= MIN_PANEL_FRAGMENT + 1e-9) area += step * y0;
+      }
+      if (!inOpening(x, this.wallHeight - step / 2)) {
+        const y1 = coverMaxY(x);
+        const gap = this.wallHeight - y1;
+        if (y1 > -Infinity && gap > 1e-6 && gap <= MIN_PANEL_FRAGMENT + 1e-9) area += step * gap;
+      }
+    }
+    for (let y = step / 2; y < this.wallHeight; y += step) {
+      if (!inOpening(step / 2, y)) {
+        const x0 = coverMinX(y);
+        if (x0 < Infinity && x0 > 1e-6 && x0 <= MIN_PANEL_FRAGMENT + 1e-9) area += step * x0;
+      }
+      if (!inOpening(this.wallLength - step / 2, y)) {
+        const x1 = coverMaxX(y);
+        const gap = this.wallLength - x1;
+        if (x1 > -Infinity && gap > 1e-6 && gap <= MIN_PANEL_FRAGMENT + 1e-9) area += step * gap;
+      }
+    }
+    return +area.toFixed(4);
+  }
+
+  scoreLayout(panels, openings, { padX = 0, padY = 0 } = {}) {
     const fullPanels = panels.filter((p) => !p.isCut).length;
     const cutPanels = panels.filter((p) => p.isCut).length;
     const total = panels.length;
     const openingTouches = this.countOpeningTouches(panels, openings);
-    // Доп. штраф за составные (Г) — это всё же подрезка
     const multiPart = panels.filter((p) => p.parts && p.parts.length > 1).length;
-    return { fullPanels, cutPanels, total, openingTouches, multiPart };
+    const edgeGaps = this.measureThinEdgeGaps(panels, openings);
+    // 0 = старт от пола/левой стены — предпочтительно для целых рядов
+    const edgeAlign = (padX <= 1e-9 ? 0 : 1) + (padY <= 1e-9 ? 0 : 1);
+    return {
+      fullPanels,
+      cutPanels,
+      total,
+      openingTouches,
+      multiPart,
+      edgeGaps,
+      edgeAlign,
+      padX,
+      padY,
+    };
   }
 
   /**
-   * 1) больше целых
-   * 2) меньше подрезанных
-   * 3) меньше панелей всего
-   * 4) меньше касаний проёмов / составных
+   * 1) без белых полос у краёв стены
+   * 2) целые ряды от пола/стены (pad = 0)
+   * 3) больше целых
+   * 4) меньше подрезанных / всего / составных
    */
   compareScores(a, b) {
+    if (a.edgeGaps !== b.edgeGaps) return a.edgeGaps - b.edgeGaps;
+    if (a.edgeAlign !== b.edgeAlign) return a.edgeAlign - b.edgeAlign;
     if (a.fullPanels !== b.fullPanels) return b.fullPanels - a.fullPanels;
     if (a.cutPanels !== b.cutPanels) return a.cutPanels - b.cutPanels;
     if (a.total !== b.total) return a.total - b.total;
@@ -453,14 +575,13 @@ export class WallSurfaceCalculator {
       const padsX = this._offsetCandidates(this.wallLength, slotW, xEdges);
       const padsY = this._offsetCandidates(this.wallHeight, slotH, yEdges);
 
-      // Предпочитаем старт от пола: padY = 0 перебираем первым
       padsY.sort((a, b) => a - b);
       padsX.sort((a, b) => a - b);
 
       for (const padX of padsX) {
         for (const padY of padsY) {
           const panels = this.buildLayout(orientation, padX, padY);
-          const score = this.scoreLayout(panels, openings);
+          const score = this.scoreLayout(panels, openings, { padX, padY });
           if (!bestScore || this.compareScores(score, bestScore) < 0) {
             best = panels;
             bestScore = score;
