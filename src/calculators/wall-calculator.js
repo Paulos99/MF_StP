@@ -184,7 +184,8 @@ export class WallSurfaceCalculator {
     }
 
     const merged = this.mergeAdjacentPanels(panels, openings, orientation);
-    return this._finalizePanels(merged);
+    const absorbed = this.absorbSliverPanels(merged, orientation);
+    return this._finalizePanels(absorbed);
   }
 
   panelsTouch(a, b) {
@@ -194,6 +195,63 @@ export class WallSurfaceCalculator {
       }
     }
     return false;
+  }
+
+  /** Панель-щепка: мин. сторона ≤5 см — номер на схеме не помещается. */
+  isSliverPanel(panel) {
+    const parts = typeof panel.getParts === 'function'
+      ? panel.getParts()
+      : [{ x: panel.x, y: panel.y, w: panel.width, h: panel.height }];
+    if (!parts.length) return true;
+    const b = boundsOfRects(parts);
+    return Math.min(b.w, b.h) <= MIN_PANEL_FRAGMENT + 1e-9;
+  }
+
+  /**
+   * Щепки у проёмов вливаются в соседа (без лимита 75×55), чтобы на схеме
+   * не было «пропавших» номеров на невидимых узких полосках.
+   */
+  absorbSliverPanels(panels, orientation) {
+    let list = panels.slice();
+    const unblockable = new WeakSet();
+    let guard = 0;
+    while (guard++ < 500) {
+      const si = list.findIndex((p) => this.isSliverPanel(p) && !unblockable.has(p));
+      if (si < 0) break;
+
+      const sliver = list[si];
+      let bestJ = -1;
+      let bestArea = -1;
+      for (let j = 0; j < list.length; j++) {
+        if (j === si) continue;
+        if (!this.panelsTouch(sliver, list[j])) continue;
+        const area = list[j].getArea?.() ?? list[j].width * list[j].height;
+        if (area > bestArea) {
+          bestArea = area;
+          bestJ = j;
+        }
+      }
+
+      if (bestJ < 0) {
+        unblockable.add(sliver);
+        continue;
+      }
+
+      const merged = this.mergeTwoPanels(sliver, list[bestJ], orientation);
+      if (!merged) {
+        unblockable.add(sliver);
+        continue;
+      }
+
+      const next = [];
+      for (let k = 0; k < list.length; k++) {
+        if (k === si || k === bestJ) continue;
+        next.push(list[k]);
+      }
+      next.push(merged);
+      list = next;
+    }
+    return list;
   }
 
   canMergePanels(a, b, openings) {
