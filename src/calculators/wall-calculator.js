@@ -18,7 +18,7 @@ import { Panel, Orientation } from './ceiling-calculator.js';
 
 /**
  * Укладка панелей на одной стене (развёртка: X — длина стены, Y — высота от пола).
- * Выбирается раскладка с минимумом панелей и подрезок при аккуратной сетке.
+ * Выбирается раскладка с минимумом подрезок и максимумом целых листов при аккуратной сетке.
  *
  * Правила:
  * — полосы ≤5 см не кладём (закрывают обрезками на объекте);
@@ -366,19 +366,20 @@ export class WallSurfaceCalculator {
   }
 
   /**
-   * Выбор раскладки (меньше = лучше):
-   * 1) меньше панелей всего (закупка)
-   * 2) меньше подрезанных
-   * 3) меньше суммарных резов
-   * 4) меньше составных / сложных форм — без мозаики
-   * 5) ровнее сетка: старт от пола, затем от левого края
+   * Выбор раскладки (удобство монтажа важнее сжатия закупки):
+   * 1) меньше подрезанных панелей — не резать 80% листов
+   * 2) больше целых
+   * 3) меньше суммарных резов / сложных форм
+   * 4) меньше панелей всего
+   * 5) ровнее сетка: от пола, затем от левого края
    */
   compareScores(a, b) {
-    if (a.total !== b.total) return a.total - b.total;
     if (a.cutPanels !== b.cutPanels) return a.cutPanels - b.cutPanels;
+    if (a.fullPanels !== b.fullPanels) return b.fullPanels - a.fullPanels;
     if (a.totalCuts !== b.totalCuts) return a.totalCuts - b.totalCuts;
-    if (a.multiPart !== b.multiPart) return a.multiPart - b.multiPart;
     if (a.complexCuts !== b.complexCuts) return a.complexCuts - b.complexCuts;
+    if (a.multiPart !== b.multiPart) return a.multiPart - b.multiPart;
+    if (a.total !== b.total) return a.total - b.total;
     if (a.openingTouches !== b.openingTouches) return a.openingTouches - b.openingTouches;
     if (a.padY !== b.padY) return a.padY - b.padY;
     if (a.padX !== b.padX) return a.padX - b.padX;
