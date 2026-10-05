@@ -6,7 +6,6 @@
 } from '../core/constants.js';
 import {
   subtractOpeningsFromRect,
-  groupConnectedRects,
   boundsOfRects,
   fitsInPanelSize,
   rectsShareEdge,
@@ -17,8 +16,8 @@ import { Panel, Orientation } from './ceiling-calculator.js';
 
 /**
  * Укладка панелей на одной стене (развёртка: X — длина стены, Y — высота от пола).
- * Приоритет: максимум целых → минимум подрезанных → меньше панелей всего.
- * Старт предпочтительно от пола; сетка может сдвигаться под края проёмов.
+ * Прямоугольные стыки (ряд или шахматка), без Г у проёмов — важно для бескаркаса.
+ * Приоритет: максимум целых → минимум подрезанных → меньше панелей → ровные швы.
  */
 export class WallSurfaceCalculator {
   constructor(wallLength, wallHeight, openings = [], wallId = '', wallLabel = '') {
@@ -70,54 +69,24 @@ export class WallSurfaceCalculator {
     };
   }
 
-  /** Связные компоненты слота минус проёмы → одна панель на компонент (Г = 1 панель) */
+  _makeRectPanel(part, orientation) {
+    const isCut = !this.isFullPanel(part.w, part.h, orientation);
+    return new Panel(part.x, part.y, part.w, part.h, orientation, 0, isCut, this.panelMeta());
+  }
+
+  /**
+   * Остатки слота минус проёмы → только прямоугольные панели (без Г).
+   * Г-формы у проёмов выглядят плохо на бескаркасном монтаже.
+   */
   panelsFromCell(cell, openings, orientation) {
     const raw = subtractOpeningsFromRect(cell, openings).filter((p) =>
       this.isFragmentWorthPlacing(p)
     );
     if (!raw.length) return [];
 
-    const components = groupConnectedRects(raw);
-    const result = [];
-
-    for (const parts of components) {
-      const filtered = parts.filter((p) => this.isFragmentWorthPlacing(p));
-      if (!filtered.length) continue;
-
-      if (!fitsInPanelSize(filtered, this.panelLength, this.panelWidth)) {
-        for (const part of filtered) {
-          const isCut = !this.isFullPanel(part.w, part.h, orientation);
-          result.push(
-            new Panel(part.x, part.y, part.w, part.h, orientation, 0, isCut, this.panelMeta())
-          );
-        }
-        continue;
-      }
-
-      const aabb = boundsOfRects(filtered);
-      const coalesced = coalesceRects(filtered);
-      const isCut =
-        coalesced.length > 1 ||
-        !this.isFullPanel(aabb.w, aabb.h, orientation) ||
-        coalesced.some(
-          (p) =>
-            Math.abs(p.x - aabb.x) > 1e-4 ||
-            Math.abs(p.y - aabb.y) > 1e-4 ||
-            Math.abs(p.w - aabb.w) > 1e-4 ||
-            Math.abs(p.h - aabb.h) > 1e-4
-        );
-
-      const panel = Panel.fromParts(
-        coalesced,
-        orientation,
-        0,
-        isCut,
-        this.panelMeta()
-      );
-      if (panel) result.push(panel);
-    }
-
-    return result;
+    // coalesce склеивает только соосные куски в большие прямоугольники, не в Г
+    const rects = coalesceRects(raw).filter((p) => this.isFragmentWorthPlacing(p));
+    return rects.map((part) => this._makeRectPanel(part, orientation));
   }
 
   /**
@@ -170,24 +139,28 @@ export class WallSurfaceCalculator {
     return [...set].filter((v) => v >= -1e-9 && v < slotSize - 1e-9);
   }
 
-  buildLayout(orientation, padX, padY) {
+  buildLayout(orientation, padX, padY, { stagger = false } = {}) {
     const openings = this.getOpeningRects();
     const panels = [];
     const slotW = orientation === Orientation.VERTICAL ? this.panelWidth : this.panelLength;
     const slotH = orientation === Orientation.VERTICAL ? this.panelLength : this.panelWidth;
-    const xs = this._axisStops(this.wallLength, slotW, padX);
     const ys = this._axisStops(this.wallHeight, slotH, padY);
 
-    for (const { start: x, size: w } of xs) {
-      for (const { start: y, size: h } of ys) {
+    ys.forEach(({ start: y, size: h }, rowIdx) => {
+      const rowPad = stagger && rowIdx % 2 === 1
+        ? +((padX + slotW / 2) % slotW).toFixed(6)
+        : padX;
+      const xs = this._axisStops(this.wallLength, slotW, rowPad);
+      for (const { start: x, size: w } of xs) {
         for (const panel of this.panelsFromCell({ x, y, w, h }, openings, orientation)) {
           panels.push(panel);
         }
       }
-    }
+    });
 
     const merged = this.mergeAdjacentPanels(panels, openings, orientation);
-    return this._finalizePanels(merged);
+    const expanded = this.expandCutPanelsIntoGaps(merged, openings, orientation);
+    return this._finalizePanels(expanded);
   }
 
   panelsTouch(a, b) {
@@ -205,6 +178,8 @@ export class WallSurfaceCalculator {
     if (!this.panelsTouch(a, b)) return false;
 
     const parts = coalesceRects([...a.getParts(), ...b.getParts()]);
+    // Только прямоугольники — без Г у проёмов (эстетика бескаркасного монтажа)
+    if (parts.length !== 1) return false;
     if (!fitsInPanelSize(parts, this.panelLength, this.panelWidth)) return false;
     if (!partsFillFreeAabb(parts, openings)) return false;
     return true;
@@ -229,8 +204,7 @@ export class WallSurfaceCalculator {
   }
 
   /**
-   * Жадно склеивает соседние подрезки, если вместе влезают в одну 75×55.
-   * Убирает лишние швы сетки (101–104 → одна; 106+107 → одна Г/полоса).
+   * Жадно склеивает соседние подрезки в больший прямоугольник внутри 75×55.
    */
   mergeAdjacentPanels(panels, openings, orientation) {
     let list = panels.slice();
@@ -246,7 +220,6 @@ export class WallSurfaceCalculator {
           if (!this.canMergePanels(list[i], list[j], openings)) continue;
           const merged = this.mergeTwoPanels(list[i], list[j], orientation);
           if (!merged) continue;
-          // Предпочитаем склейку, дающую целую панель, затем большую площадь
           const gainFull = merged.isCut ? 0 : 1;
           const area = merged.getArea();
           if (
@@ -269,6 +242,82 @@ export class WallSurfaceCalculator {
         list = next;
         changed = true;
       }
+    }
+    return list;
+  }
+
+  /** Непокрытые куски стены (не проём и не панель). */
+  _uncoveredGaps(panels, openings) {
+    let free = subtractOpeningsFromRect(
+      { x: 0, y: 0, w: this.wallLength, h: this.wallHeight },
+      openings
+    );
+    for (const panel of panels) {
+      const obstacles = panel.getParts();
+      const next = [];
+      for (const region of free) {
+        next.push(...subtractOpeningsFromRect(region, obstacles));
+      }
+      free = next;
+    }
+    return free.filter((g) => g.w > 1e-6 && g.h > 1e-6);
+  }
+
+  /**
+   * Тонкие белые щели у проёмов втягиваем в соседнюю уже подрезанную панель,
+   * если она после этого всё ещё влезает в 55×75. Целые не трогаем.
+   */
+  expandCutPanelsIntoGaps(panels, openings, orientation) {
+    let list = panels.map((p) => p);
+    let guard = 0;
+    while (guard++ < 200) {
+      const gaps = this._uncoveredGaps(list, openings);
+      if (!gaps.length) break;
+
+      let absorbed = false;
+      // Сначала самые тонкие щели (как у окна над/сбоку)
+      gaps.sort((a, b) => Math.min(a.w, a.h) - Math.min(b.w, b.h));
+
+      for (const gap of gaps) {
+        let bestIdx = -1;
+        let bestParts = null;
+        let bestArea = Infinity;
+
+        for (let i = 0; i < list.length; i++) {
+          const panel = list[i];
+          if (!panel.isCut) continue;
+          const touches = panel.getParts().some((part) => rectsShareEdge(part, gap, 1e-4));
+          if (!touches) continue;
+
+          const parts = coalesceRects([...panel.getParts(), gap]);
+          if (parts.length !== 1) continue; // не создавать Г из щели
+          if (!fitsInPanelSize(parts, this.panelLength, this.panelWidth)) continue;
+          if (!partsFillFreeAabb(parts, openings)) continue;
+
+          const area = panel.getArea();
+          // предпочитаем меньшую подрезку рядом (21/27), не раздувать крупную
+          if (area < bestArea) {
+            bestArea = area;
+            bestIdx = i;
+            bestParts = parts;
+          }
+        }
+
+        if (bestIdx < 0) continue;
+        const grown = Panel.fromParts(
+          bestParts,
+          list[bestIdx].orientation || orientation,
+          0,
+          true,
+          this.panelMeta()
+        );
+        if (!grown) continue;
+        list[bestIdx] = grown;
+        absorbed = true;
+        break;
+      }
+
+      if (!absorbed) break;
     }
     return list;
   }
@@ -301,28 +350,45 @@ export class WallSurfaceCalculator {
     return false;
   }
 
-  scoreLayout(panels, openings) {
+  scoreLayout(panels, openings, { stagger = false, padX = 0, padY = 0 } = {}) {
     const fullPanels = panels.filter((p) => !p.isCut).length;
     const cutPanels = panels.filter((p) => p.isCut).length;
     const total = panels.length;
     const openingTouches = this.countOpeningTouches(panels, openings);
-    // Доп. штраф за составные (Г) — это всё же подрезка
     const multiPart = panels.filter((p) => p.parts && p.parts.length > 1).length;
-    return { fullPanels, cutPanels, total, openingTouches, multiPart };
+    // Непокрытые щели у проёмов (эстетика)
+    const gapArea = this._uncoveredGaps(panels, openings).reduce((s, g) => s + g.w * g.h, 0);
+    return {
+      fullPanels,
+      cutPanels,
+      total,
+      openingTouches,
+      multiPart,
+      gapArea,
+      stagger: stagger ? 1 : 0,
+      padX,
+      padY,
+    };
   }
 
   /**
-   * 1) больше целых
-   * 2) меньше подрезанных
-   * 3) меньше панелей всего
-   * 4) меньше касаний проёмов / составных
+   * 1) без составных Г
+   * 2) меньше белых щелей у проёмов
+   * 3) больше целых
+   * 4) меньше подрезанных / панелей
+   * 5) ровная сетка от пола; ряд предпочтительнее шахматки при равенстве
    */
   compareScores(a, b) {
+    if (a.multiPart !== b.multiPart) return a.multiPart - b.multiPart;
+    if (Math.abs(a.gapArea - b.gapArea) > 1e-6) return a.gapArea - b.gapArea;
     if (a.fullPanels !== b.fullPanels) return b.fullPanels - a.fullPanels;
     if (a.cutPanels !== b.cutPanels) return a.cutPanels - b.cutPanels;
     if (a.total !== b.total) return a.total - b.total;
-    if (a.multiPart !== b.multiPart) return a.multiPart - b.multiPart;
-    return a.openingTouches - b.openingTouches;
+    if (a.openingTouches !== b.openingTouches) return a.openingTouches - b.openingTouches;
+    if (a.stagger !== b.stagger) return a.stagger - b.stagger;
+    if (a.padY !== b.padY) return a.padY - b.padY;
+    if (a.padX !== b.padX) return a.padX - b.padX;
+    return 0;
   }
 
   _finalizePanels(panels) {
@@ -352,17 +418,18 @@ export class WallSurfaceCalculator {
       const padsX = this._offsetCandidates(this.wallLength, slotW, xEdges);
       const padsY = this._offsetCandidates(this.wallHeight, slotH, yEdges);
 
-      // Предпочитаем старт от пола: padY = 0 перебираем первым
       padsY.sort((a, b) => a - b);
       padsX.sort((a, b) => a - b);
 
-      for (const padX of padsX) {
-        for (const padY of padsY) {
-          const panels = this.buildLayout(orientation, padX, padY);
-          const score = this.scoreLayout(panels, openings);
-          if (!bestScore || this.compareScores(score, bestScore) < 0) {
-            best = panels;
-            bestScore = score;
+      for (const stagger of [false, true]) {
+        for (const padX of padsX) {
+          for (const padY of padsY) {
+            const panels = this.buildLayout(orientation, padX, padY, { stagger });
+            const score = this.scoreLayout(panels, openings, { stagger, padX, padY });
+            if (!bestScore || this.compareScores(score, bestScore) < 0) {
+              best = panels;
+              bestScore = score;
+            }
           }
         }
       }
