@@ -1972,11 +1972,11 @@ export class SketchEditor {
 
     const w = this.canvasToWorld(cx, cy);
 
-    // Калибровка по фото: курсор и точки без привязки к сетке
+    // Калибровка по фото: без сетки и без превью-курсора чертежа
     if (this._bgCalibrate) {
-      this._previewPoint = { x: w.x, y: w.y };
-      this._previewTarget = this._previewPoint;
-      this._previewSmooth = this._previewPoint;
+      this._previewPoint = null;
+      this._previewTarget = null;
+      this._previewSmooth = null;
       this.canvas.style.cursor = 'crosshair';
       this._scheduleRender();
       return;
@@ -3201,25 +3201,7 @@ export class SketchEditor {
       this._drawWallHeightCenter();
     }
 
-    if (this._bgCalibrate && this._previewPoint) {
-      const preview = this.worldToCanvas(this._previewPoint.x, this._previewPoint.y);
-      const r = 6;
-      this.ctx.fillStyle = 'rgba(230, 126, 34, 0.45)';
-      this.ctx.beginPath();
-      this.ctx.arc(preview.x, preview.y, r, 0, Math.PI * 2);
-      this.ctx.fill();
-      this.ctx.strokeStyle = 'rgba(230, 126, 34, 0.95)';
-      this.ctx.lineWidth = 2;
-      this.ctx.beginPath();
-      this.ctx.arc(preview.x, preview.y, r + 3, 0, Math.PI * 2);
-      this.ctx.stroke();
-      this.ctx.beginPath();
-      this.ctx.moveTo(preview.x - 12, preview.y);
-      this.ctx.lineTo(preview.x + 12, preview.y);
-      this.ctx.moveTo(preview.x, preview.y - 12);
-      this.ctx.lineTo(preview.x, preview.y + 12);
-      this.ctx.stroke();
-    } else if (!this.closed && this._previewPoint && this.vertices.length === 0) {
+    if (!this.closed && this._previewPoint && this.vertices.length === 0) {
       const preview = this.worldToCanvas(this._previewPoint.x, this._previewPoint.y);
       const r = 7;
       this.ctx.fillStyle = 'rgba(1, 100, 79, 0.4)';
