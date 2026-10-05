@@ -72,20 +72,19 @@ export class WallSurfaceCalculator {
 
   /** Связные компоненты слота минус проёмы → одна панель на компонент (Г = 1 панель) */
   panelsFromCell(cell, openings, orientation) {
-    const raw = subtractOpeningsFromRect(cell, openings).filter((p) =>
-      this.isFragmentWorthPlacing(p)
-    );
+    // Все положительные остатки кладём: тонкие полоски у проёмов иначе
+    // остаются пустыми «дырами» на схеме (раньше отбрасывали ≤5 см).
+    const raw = subtractOpeningsFromRect(cell, openings);
     if (!raw.length) return [];
 
     const components = groupConnectedRects(raw);
     const result = [];
 
     for (const parts of components) {
-      const filtered = parts.filter((p) => this.isFragmentWorthPlacing(p));
-      if (!filtered.length) continue;
+      if (!parts.length) continue;
 
-      if (!fitsInPanelSize(filtered, this.panelLength, this.panelWidth)) {
-        for (const part of filtered) {
+      if (!fitsInPanelSize(parts, this.panelLength, this.panelWidth)) {
+        for (const part of parts) {
           const isCut = !this.isFullPanel(part.w, part.h, orientation);
           result.push(
             new Panel(part.x, part.y, part.w, part.h, orientation, 0, isCut, this.panelMeta())
@@ -94,8 +93,8 @@ export class WallSurfaceCalculator {
         continue;
       }
 
-      const aabb = boundsOfRects(filtered);
-      const coalesced = coalesceRects(filtered);
+      const aabb = boundsOfRects(parts);
+      const coalesced = coalesceRects(parts);
       const isCut =
         coalesced.length > 1 ||
         !this.isFullPanel(aabb.w, aabb.h, orientation) ||
@@ -122,11 +121,12 @@ export class WallSurfaceCalculator {
 
   /**
    * Остановки оси с отступом startPad слева/снизу:
-   * зазор &lt;5 см не кладём; далее целые слоты; остаток ≥5 см — cut.
+   * любой положительный pad/остаток кладём (в т.ч. &lt;5 см), иначе у проёмов
+   * и краёв стены остаются пустые полосы на схеме.
    */
   _axisStops(total, slotSize, startPad = 0) {
     const stops = [];
-    if (total < MIN_PANEL_FRAGMENT - 1e-6) return stops;
+    if (total < 1e-6) return stops;
 
     let pad = startPad;
     if (pad < 0) pad = 0;
@@ -135,11 +135,8 @@ export class WallSurfaceCalculator {
     if (pad >= slotSize - 1e-9) pad %= slotSize;
 
     let pos = 0;
-    if (pad > MIN_PANEL_FRAGMENT + 1e-9) {
+    if (pad > 1e-6) {
       stops.push({ start: 0, size: pad });
-      pos = pad;
-    } else if (pad > 1e-6) {
-      // ≤5 см — технологический зазор, целые начинаются после него
       pos = pad;
     }
 
@@ -148,7 +145,7 @@ export class WallSurfaceCalculator {
       pos += slotSize;
     }
     const rem = total - pos;
-    if (rem > MIN_PANEL_FRAGMENT + 1e-9) {
+    if (rem > 1e-6) {
       stops.push({ start: pos, size: rem });
     }
     return stops;
