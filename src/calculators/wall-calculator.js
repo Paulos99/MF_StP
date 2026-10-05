@@ -18,8 +18,7 @@ import { Panel, Orientation } from './ceiling-calculator.js';
 
 /**
  * Укладка панелей на одной стене (развёртка: X — длина стены, Y — высота от пола).
- * Приоритет: максимум целых → минимум подрезанных → меньше панелей всего.
- * Старт предпочтительно от пола; сетка может сдвигаться под края проёмов.
+ * Выбирается раскладка с минимумом панелей и подрезок при аккуратной сетке.
  *
  * Правила:
  * — полосы ≤5 см не кладём (закрывают обрезками на объекте);
@@ -339,28 +338,51 @@ export class WallSurfaceCalculator {
     return false;
   }
 
-  scoreLayout(panels, openings) {
+  scoreLayout(panels, openings, { padX = 0, padY = 0 } = {}) {
     const fullPanels = panels.filter((p) => !p.isCut).length;
     const cutPanels = panels.filter((p) => p.isCut).length;
     const total = panels.length;
     const openingTouches = this.countOpeningTouches(panels, openings);
-    // Доп. штраф за составные (Г) — это всё же подрезка
     const multiPart = panels.filter((p) => p.parts && p.parts.length > 1).length;
-    return { fullPanels, cutPanels, total, openingTouches, multiPart };
+    let totalCuts = 0;
+    let complexCuts = 0;
+    for (const p of panels) {
+      if (!p.isCut) continue;
+      const cuts = this.estimateCuts(p.getParts(), p.orientation);
+      totalCuts += cuts;
+      if (cuts >= 2) complexCuts += 1;
+    }
+    return {
+      fullPanels,
+      cutPanels,
+      total,
+      totalCuts,
+      multiPart,
+      complexCuts,
+      openingTouches,
+      padX,
+      padY,
+    };
   }
 
   /**
-   * 1) больше целых
+   * Выбор раскладки (меньше = лучше):
+   * 1) меньше панелей всего (закупка)
    * 2) меньше подрезанных
-   * 3) меньше панелей всего
-   * 4) меньше касаний проёмов / составных
+   * 3) меньше суммарных резов
+   * 4) меньше составных / сложных форм — без мозаики
+   * 5) ровнее сетка: старт от пола, затем от левого края
    */
   compareScores(a, b) {
-    if (a.fullPanels !== b.fullPanels) return b.fullPanels - a.fullPanels;
-    if (a.cutPanels !== b.cutPanels) return a.cutPanels - b.cutPanels;
     if (a.total !== b.total) return a.total - b.total;
+    if (a.cutPanels !== b.cutPanels) return a.cutPanels - b.cutPanels;
+    if (a.totalCuts !== b.totalCuts) return a.totalCuts - b.totalCuts;
     if (a.multiPart !== b.multiPart) return a.multiPart - b.multiPart;
-    return a.openingTouches - b.openingTouches;
+    if (a.complexCuts !== b.complexCuts) return a.complexCuts - b.complexCuts;
+    if (a.openingTouches !== b.openingTouches) return a.openingTouches - b.openingTouches;
+    if (a.padY !== b.padY) return a.padY - b.padY;
+    if (a.padX !== b.padX) return a.padX - b.padX;
+    return 0;
   }
 
   _finalizePanels(panels) {
@@ -397,7 +419,7 @@ export class WallSurfaceCalculator {
       for (const padX of padsX) {
         for (const padY of padsY) {
           const panels = this.buildLayout(orientation, padX, padY);
-          const score = this.scoreLayout(panels, openings);
+          const score = this.scoreLayout(panels, openings, { padX, padY });
           if (!bestScore || this.compareScores(score, bestScore) < 0) {
             best = panels;
             bestScore = score;
