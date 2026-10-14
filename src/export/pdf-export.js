@@ -5,6 +5,8 @@ import { getBounds } from '../core/polygon-geometry.js';
 const BRAND = '#01644f';
 const PAGE_WIDTH_MM = 210;
 const PAGE_HEIGHT_MM = 297;
+/** Полезная высота тела страницы (A4 − шапка − футер − паддинги) */
+const BODY_USABLE_MM = 210;
 
 function formatRub(value) {
   return `${Number(value).toLocaleString('ru-RU')} ₽`;
@@ -28,30 +30,89 @@ function pageShell({ title, subtitle, bodyHtml, pageLabel }) {
       flex-direction:column;
       overflow:hidden;
     ">
-      <div style="background:${BRAND};color:#fff;padding:14px 16px;flex-shrink:0">
-        <div style="font-size:22px;font-weight:bold">StP MultiFRAME</div>
-        <div style="font-size:12px;margin-top:4px;opacity:0.9">${title}</div>
-        ${subtitle ? `<div style="font-size:11px;margin-top:2px;opacity:0.75">${subtitle}</div>` : ''}
+      <div style="background:${BRAND};color:#fff;padding:10px 14px;flex-shrink:0">
+        <div style="font-size:18px;font-weight:bold;line-height:1.2">StP MultiFRAME</div>
+        <div style="font-size:11px;margin-top:3px;opacity:0.9">${title}</div>
+        ${subtitle ? `<div style="font-size:10px;margin-top:1px;opacity:0.75">${subtitle}</div>` : ''}
       </div>
-      <div style="padding:14px 16px 36px;flex:1;display:flex;flex-direction:column;min-height:0">
+      <div style="padding:10px 14px 8px;flex:1;display:flex;flex-direction:column;min-height:0;overflow:hidden;box-sizing:border-box">
         ${bodyHtml}
       </div>
-      <div style="padding:6px 16px 10px;font-size:10px;color:#8899a4;text-align:right;flex-shrink:0">${pageLabel}</div>
+      <div style="padding:4px 14px 8px;font-size:9px;color:#8899a4;text-align:right;flex-shrink:0;border-top:1px solid #eef1f3">${pageLabel}</div>
     </div>`;
 }
 
-function statsBlock(rows) {
-  const items = rows
-    .filter(Boolean)
+function statsBlock(rows, { compact = false, columns = 1 } = {}) {
+  const filtered = rows.filter(Boolean);
+  const pad = compact ? '2px 0' : '4px 0';
+  const font = compact ? '10px' : '11px';
+  const items = filtered
     .map(
       (row) => `
-      <div style="display:flex;justify-content:space-between;gap:12px;padding:7px 0;border-bottom:1px solid #e8ecef;font-size:12px">
-        <span style="color:#5f6b73">${row.label}</span>
-        <strong style="text-align:right">${row.value}</strong>
+      <div style="display:flex;justify-content:space-between;gap:8px;padding:${pad};border-bottom:1px solid #eef1f3;font-size:${font};line-height:1.25;break-inside:avoid">
+        <span style="color:#5f6b73;min-width:0">${row.label}</span>
+        <strong style="text-align:right;white-space:nowrap;flex-shrink:0">${row.value}</strong>
       </div>`
     )
     .join('');
-  return `<div style="margin-bottom:14px">${items}</div>`;
+
+  if (columns === 2 && filtered.length > 8) {
+    const mid = Math.ceil(filtered.length / 2);
+    const left = filtered.slice(0, mid);
+    const right = filtered.slice(mid);
+    const col = (list) =>
+      list
+        .map(
+          (row) => `
+        <div style="display:flex;justify-content:space-between;gap:6px;padding:${pad};border-bottom:1px solid #eef1f3;font-size:${font};line-height:1.25">
+          <span style="color:#5f6b73;min-width:0">${row.label}</span>
+          <strong style="text-align:right;white-space:nowrap;flex-shrink:0">${row.value}</strong>
+        </div>`
+        )
+        .join('');
+    return `<div style="display:grid;grid-template-columns:1fr 1fr;gap:0 14px;margin-bottom:8px;flex-shrink:0">${col(left)}${col(right)}</div>`;
+  }
+
+  return `<div style="margin-bottom:8px;flex-shrink:0">${items}</div>`;
+}
+
+function schemeBlock(image, alt, maxHeightMm) {
+  return `
+    <div style="
+      flex:1 1 auto;
+      min-height:0;
+      max-height:${maxHeightMm}mm;
+      overflow:hidden;
+      margin-top:6px;
+      display:flex;
+      flex-direction:column;
+    ">
+      <div style="font-size:11px;font-weight:600;color:${BRAND};margin:0 0 4px;flex-shrink:0">Схема укладки</div>
+      <div style="
+        flex:1;
+        min-height:0;
+        overflow:hidden;
+        display:flex;
+        align-items:center;
+        justify-content:center;
+        border:1px solid #e1e5e8;
+        border-radius:6px;
+        background:#fff;
+        padding:3px;
+        box-sizing:border-box;
+      ">
+        <img src="${image}" alt="${alt}" style="max-width:100%;max-height:100%;width:auto;height:auto;object-fit:contain;display:block"/>
+      </div>
+    </div>`;
+}
+
+/** Высота схемы под оставшееся место на странице */
+function schemeMaxHeightMm(rowCount, extraMm = 0) {
+  const titleMm = 12;
+  const rowMm = 5.6;
+  const statsMm = Math.min(rowCount, 18) * rowMm + 6;
+  const remaining = BODY_USABLE_MM - titleMm - statsMm - extraMm;
+  return Math.round(Math.max(68, Math.min(132, remaining)));
 }
 
 function reportCoverageArea(bom) {
@@ -72,36 +133,42 @@ function buildSchemeSummaryBody({ bom, room, dateStr, planImage }) {
   }
 
   const planBlock = planImage
-    ? `<div style="flex:0 0 95mm;text-align:center">
-        <div style="font-size:13px;font-weight:600;color:${BRAND};margin-bottom:6px">План помещения</div>
-        <img src="${planImage}" alt="План помещения" style="max-width:100%;max-height:82mm;object-fit:contain;border:1px solid #e1e5e8;border-radius:8px;background:#fff;padding:4px;box-sizing:border-box"/>
-        <div style="font-size:10px;color:#8899a4;margin-top:4px;line-height:1.4">Вид сверху · схема для печати</div>
+    ? `<div style="flex:0 0 72mm;text-align:center">
+        <div style="font-size:11px;font-weight:600;color:${BRAND};margin-bottom:4px">План помещения</div>
+        <img src="${planImage}" alt="План помещения" style="max-width:100%;max-height:58mm;object-fit:contain;border:1px solid #e1e5e8;border-radius:6px;background:#fff;padding:3px;box-sizing:border-box"/>
       </div>`
     : '';
 
-  const paramsBlock = statsBlock([
-    { label: 'Форма помещения', value: `Полигон, ${sizeLabel}` },
-    { label: 'Высота стен', value: `${room.wallHeight.toFixed(2)} м` },
-    { label: 'Площадь потолка', value: `${room.getTotalArea().toFixed(2)} м²` },
-    { label: 'Площадь стен (чистая)', value: `${room.getTotalWallArea().toFixed(2)} м²` },
-    { label: 'Проёмов', value: `${room.openings.length} шт.` },
-    { label: 'Размер панели (габарит)', value: '0,75×0,55 м' },
-  ]);
+  const paramsBlock = statsBlock(
+    [
+      { label: 'Форма помещения', value: `Полигон, ${sizeLabel}` },
+      { label: 'Высота стен', value: `${room.wallHeight.toFixed(2)} м` },
+      { label: 'Площадь потолка', value: `${room.getTotalArea().toFixed(2)} м²` },
+      { label: 'Площадь стен (чистая)', value: `${room.getTotalWallArea().toFixed(2)} м²` },
+      { label: 'Проёмов', value: `${room.openings.length} шт.` },
+      { label: 'Размер панели', value: '0,75×0,55 м' },
+    ],
+    { compact: true }
+  );
+
+  const totalsRows = totalsRowsList(bom);
 
   return `
-    <h1 style="text-align:center;font-size:18px;margin:0 0 10px;color:${BRAND}">СВОДНЫЙ РАСЧЁТ</h1>
-    <p style="font-size:11px;color:#5f6b73;margin:0 0 12px;text-align:center">Дата: ${dateStr}</p>
-    <div style="display:flex;gap:14px;align-items:flex-start;margin-bottom:12px">
-      <div style="flex:1;min-width:0">${paramsBlock}</div>
-      ${planBlock}
-    </div>
-    <h2 style="font-size:14px;color:${BRAND};margin:0 0 8px">Итого по проекту</h2>
-    ${totalsBlock(bom)}
-    <h2 style="font-size:14px;color:${BRAND};margin:12px 0 8px">Состав отчёта</h2>
-    <ul style="font-size:12px;line-height:1.7;margin:0;padding-left:18px;color:#333">${surfacesList}</ul>
-    <p style="font-size:11px;color:#8899a4;margin-top:14px;line-height:1.5">
-      Каждая поверхность — на отдельной странице со схемой укладки и спецификацией расходников.
-    </p>`;
+    <div style="flex:1;display:flex;flex-direction:column;min-height:0;overflow:hidden">
+      <h1 style="text-align:center;font-size:15px;margin:0 0 4px;color:${BRAND};flex-shrink:0">СВОДНЫЙ РАСЧЁТ</h1>
+      <p style="font-size:10px;color:#5f6b73;margin:0 0 8px;text-align:center;flex-shrink:0">Дата: ${dateStr}</p>
+      <div style="display:flex;gap:12px;align-items:flex-start;margin-bottom:8px;flex-shrink:0">
+        <div style="flex:1;min-width:0">${paramsBlock}</div>
+        ${planBlock}
+      </div>
+      <h2 style="font-size:12px;color:${BRAND};margin:0 0 4px;flex-shrink:0">Итого по проекту</h2>
+      ${statsBlock(totalsRows, { compact: true, columns: 2 })}
+      <h2 style="font-size:12px;color:${BRAND};margin:4px 0 2px;flex-shrink:0">Состав отчёта</h2>
+      <ul style="font-size:10px;line-height:1.45;margin:0;padding-left:16px;color:#333;flex-shrink:0">${surfacesList}</ul>
+      <p style="font-size:9px;color:#8899a4;margin:6px 0 0;line-height:1.35;flex-shrink:0">
+        Каждая поверхность — на отдельной странице со схемой укладки и спецификацией.
+      </p>
+    </div>`;
 }
 
 function buildAreaSummaryBody({ bom, dateStr }) {
@@ -127,26 +194,26 @@ function buildAreaSummaryBody({ bom, dateStr }) {
   }
 
   return `
-    <h1 style="text-align:center;font-size:18px;margin:0 0 10px;color:${BRAND}">ПРИБЛИЗИТЕЛЬНЫЙ РАСЧЁТ ПО ПЛОЩАДИ</h1>
-    <p style="font-size:11px;color:#5f6b73;margin:0 0 12px;text-align:center">Дата: ${dateStr}</p>
-    ${statsBlock([
-      bom.ceiling ? { label: 'Площадь потолка', value: `${ceilingArea.toFixed(2)} м²` } : null,
-      wallsArea > 0 ? { label: 'Площадь стен', value: `${wallsArea.toFixed(2)} м²` } : null,
-      wallCount > 0 ? { label: 'Стен в расчёте', value: `${wallCount} шт.` } : null,
-      { label: 'Размер панели (габарит)', value: '0,75×0,55 м' },
-      { label: 'Тип расчёта', value: 'Оценка по площади (без схемы укладки)' },
-    ])}
-    <h2 style="font-size:14px;color:${BRAND};margin:0 0 8px">Итого по проекту</h2>
-    ${totalsBlock(bom)}
-    <h2 style="font-size:14px;color:${BRAND};margin:12px 0 8px">Состав отчёта</h2>
-    <ul style="font-size:12px;line-height:1.7;margin:0;padding-left:18px;color:#333">${surfacesList || '<li>Нет поверхностей</li>'}</ul>
-    <p style="font-size:11px;color:#8899a4;margin-top:14px;line-height:1.5">
-      Расчёт по площади — ориентировочный. Схема укладки панелей не строится: точная раскладка доступна в режимах «по размерам» и «нарисовать план».
-    </p>`;
+    <h1 style="text-align:center;font-size:15px;margin:0 0 6px;color:${BRAND}">ПРИБЛИЗИТЕЛЬНЫЙ РАСЧЁТ ПО ПЛОЩАДИ</h1>
+    <p style="font-size:10px;color:#5f6b73;margin:0 0 8px;text-align:center">Дата: ${dateStr}</p>
+    ${statsBlock(
+      [
+        bom.ceiling ? { label: 'Площадь потолка', value: `${ceilingArea.toFixed(2)} м²` } : null,
+        wallsArea > 0 ? { label: 'Площадь стен', value: `${wallsArea.toFixed(2)} м²` } : null,
+        wallCount > 0 ? { label: 'Стен в расчёте', value: `${wallCount} шт.` } : null,
+        { label: 'Размер панели', value: '0,75×0,55 м' },
+        { label: 'Тип расчёта', value: 'Оценка по площади (без схемы)' },
+      ],
+      { compact: true }
+    )}
+    <h2 style="font-size:12px;color:${BRAND};margin:0 0 4px">Итого по проекту</h2>
+    ${statsBlock(totalsRowsList(bom), { compact: true, columns: 2 })}
+    <h2 style="font-size:12px;color:${BRAND};margin:8px 0 4px">Состав отчёта</h2>
+    <ul style="font-size:10px;line-height:1.45;margin:0;padding-left:16px;color:#333">${surfacesList || '<li>Нет поверхностей</li>'}</ul>`;
 }
 
-function totalsBlock(bom) {
-  return statsBlock([
+function totalsRowsList(bom) {
+  return [
     bom.ceiling
       ? {
           label: `Потолок (${bom.ceiling.mountingLabel})`,
@@ -178,7 +245,7 @@ function totalsBlock(bom) {
           value: formatRub(bom.total.totalCost),
         }
       : null,
-  ]);
+  ];
 }
 
 function frameStatsRows(frame) {
@@ -192,28 +259,30 @@ function frameStatsRows(frame) {
 function buildCeilingBody({ bom, ceilingImage }) {
   const s = bom.ceiling.stats;
   const frame = bom.ceiling.frame;
-  const imageBlock = ceilingImage
-    ? `<div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:0;margin-top:6px">
-        <div style="font-size:12px;font-weight:600;color:${BRAND};margin-bottom:4px;align-self:flex-start">Схема укладки (печать)</div>
-        <img src="${ceilingImage}" alt="Схема потолка" style="max-width:100%;max-height:168mm;object-fit:contain;border:1px solid #e1e5e8;border-radius:8px;background:#fff;padding:4px;box-sizing:border-box"/>
-      </div>`
-    : `<div style="margin-top:16px;padding:14px;border:1px dashed #c5d0d6;border-radius:8px;background:#f7faf9;color:#5f6b73;font-size:12px;line-height:1.5">
-        Схема укладки не строится — расчёт выполнен по площади.
-      </div>`;
+  const rows = [
+    { label: 'Монтаж', value: bom.ceiling.mountingLabel },
+    { label: 'Схема укладки', value: bom.ceiling.schemeName },
+    { label: 'Площадь', value: `${bom.ceiling.area.toFixed(2)} м²` },
+    { label: 'Панелей', value: `${s.total} шт. (${s.fullPanels} целых + ${s.cutPanels} подрез.)` },
+    { label: 'К закупке', value: `${s.withReserve} шт.` },
+    { label: 'Дюбели (с запасом 15%)', value: `${s.dowels.withReserve} шт.` },
+    ...frameStatsRows(frame),
+    { label: 'Стоимость панелей', value: formatRub(s.totalCost) },
+  ];
+  const maxH = schemeMaxHeightMm(rows.filter(Boolean).length);
 
   return `
-    <h1 style="font-size:17px;margin:0 0 12px;color:${BRAND}">Потолок</h1>
-    ${statsBlock([
-      { label: 'Монтаж', value: bom.ceiling.mountingLabel },
-      { label: 'Схема укладки', value: bom.ceiling.schemeName },
-      { label: 'Площадь', value: `${bom.ceiling.area.toFixed(2)} м²` },
-      { label: 'Панелей', value: `${s.total} шт. (${s.fullPanels} целых + ${s.cutPanels} подрез.)` },
-      { label: 'К закупке', value: `${s.withReserve} шт.` },
-      { label: 'Дюбели (с запасом 15%)', value: `${s.dowels.withReserve} шт.` },
-      ...frameStatsRows(frame),
-      { label: 'Стоимость панелей', value: formatRub(s.totalCost) },
-    ])}
-    ${imageBlock}`;
+    <div style="flex:1;display:flex;flex-direction:column;min-height:0;overflow:hidden">
+      <h1 style="font-size:14px;margin:0 0 6px;color:${BRAND};flex-shrink:0">Потолок</h1>
+      ${statsBlock(rows, { compact: true, columns: 2 })}
+      ${
+        ceilingImage
+          ? schemeBlock(ceilingImage, 'Схема потолка', maxH)
+          : `<div style="margin-top:8px;padding:10px;border:1px dashed #c5d0d6;border-radius:6px;background:#f7faf9;color:#5f6b73;font-size:11px;line-height:1.4;flex-shrink:0">
+              Схема укладки не строится — расчёт выполнен по площади.
+            </div>`
+      }
+    </div>`;
 }
 
 function formatOpeningLine(o) {
@@ -226,52 +295,62 @@ function formatOpeningLine(o) {
 }
 
 function buildWallBody({ wr, stats, image, mountingLabel, areaEstimate = false }) {
-  const wallHeight = wr.grossArea && wr.wall?.length
-    ? wr.grossArea / wr.wall.length
-    : null;
-  const openingsHtml =
+  const wallHeight =
+    wr.grossArea && wr.wall?.length ? wr.grossArea / wr.wall.length : null;
+  const openingsLines =
     wr.openings?.length > 0
-      ? wr.openings.map((o) => `<li>${formatOpeningLine(o)}</li>`).join('')
-      : '<li>Проёмов нет</li>';
+      ? wr.openings.map((o) => formatOpeningLine(o)).join(' · ')
+      : 'нет';
 
   const sizeRow = areaEstimate
     ? { label: 'Площадь (оценка)', value: `${(wr.netArea ?? stats.netArea).toFixed(2)} м²` }
     : { label: 'Размер стены', value: `${wr.wall.length.toFixed(2)} × ${wallHeight.toFixed(2)} м` };
 
-  const imageBlock = image
-    ? `<div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:0;margin-top:4px">
-        <div style="font-size:12px;font-weight:600;color:${BRAND};margin-bottom:4px;align-self:flex-start">Схема укладки (печать)</div>
-        <img src="${image}" alt="${wr.wall.label}" style="max-width:100%;max-height:145mm;object-fit:contain;border:1px solid #e1e5e8;border-radius:8px;background:#fff;padding:4px;box-sizing:border-box"/>
-      </div>`
-    : areaEstimate
-      ? `<div style="margin-top:12px;padding:14px;border:1px dashed #c5d0d6;border-radius:8px;background:#f7faf9;color:#5f6b73;font-size:12px;line-height:1.5">
-          Схема укладки не строится — стена задана площадью.
-        </div>`
-      : '';
+  const rows = [
+    { label: 'Монтаж', value: mountingLabel },
+    sizeRow,
+    !areaEstimate ? { label: 'Площадь брутто', value: `${wr.grossArea.toFixed(2)} м²` } : null,
+    { label: 'Площадь чистая', value: `${stats.netArea.toFixed(2)} м²` },
+    !areaEstimate ? { label: 'Проёмов', value: `${stats.openingsCount} шт.` } : null,
+    {
+      label: 'Панелей',
+      value: `${stats.total} шт. (${stats.fullPanels} целых + ${stats.cutPanels} подрез.)`,
+    },
+    { label: 'К закупке', value: `${stats.withReserve} шт.` },
+    { label: 'Дюбели (с запасом 15%)', value: `${stats.dowels.withReserve} шт.` },
+    ...frameStatsRows(stats.frame),
+    { label: 'Стоимость панелей', value: formatRub(stats.totalCost) },
+  ];
+
+  const openingsBlock = areaEstimate
+    ? ''
+    : `<div style="font-size:10px;line-height:1.35;margin:0 0 2px;color:#333;flex-shrink:0">
+        <span style="color:${BRAND};font-weight:600">Проёмы:</span> ${openingsLines}
+      </div>`;
+
+  const extrasMm = areaEstimate ? 0 : 10;
+  const maxH = schemeMaxHeightMm(rows.filter(Boolean).length, extrasMm);
 
   return `
-    <h1 style="font-size:17px;margin:0 0 12px;color:${BRAND}">${wr.wall.label}</h1>
-    ${statsBlock([
-      { label: 'Монтаж', value: mountingLabel },
-      sizeRow,
-      !areaEstimate ? { label: 'Площадь брутто', value: `${wr.grossArea.toFixed(2)} м²` } : null,
-      { label: 'Площадь чистая', value: `${stats.netArea.toFixed(2)} м²` },
-      !areaEstimate ? { label: 'Проёмов', value: `${stats.openingsCount} шт.` } : null,
-      { label: 'Панелей', value: `${stats.total} шт. (${stats.fullPanels} целых + ${stats.cutPanels} подрез.)` },
-      { label: 'К закупке', value: `${stats.withReserve} шт.` },
-      { label: 'Дюбели (с запасом 15%)', value: `${stats.dowels.withReserve} шт.` },
-      ...frameStatsRows(stats.frame),
-      { label: 'Стоимость панелей', value: formatRub(stats.totalCost) },
-    ])}
-    ${areaEstimate ? '' : `
-    <h2 style="font-size:13px;color:${BRAND};margin:0 0 6px">Проёмы на стене</h2>
-    <ul style="font-size:11px;line-height:1.6;margin:0 0 12px;padding-left:18px;color:#333">${openingsHtml}</ul>`}
-    ${imageBlock}`;
+    <div style="flex:1;display:flex;flex-direction:column;min-height:0;overflow:hidden">
+      <h1 style="font-size:14px;margin:0 0 6px;color:${BRAND};flex-shrink:0">${wr.wall.label}</h1>
+      ${statsBlock(rows, { compact: true, columns: 2 })}
+      ${openingsBlock}
+      ${
+        image
+          ? schemeBlock(image, wr.wall.label, maxH)
+          : areaEstimate
+            ? `<div style="margin-top:8px;padding:10px;border:1px dashed #c5d0d6;border-radius:6px;background:#f7faf9;color:#5f6b73;font-size:11px;line-height:1.4;flex-shrink:0">
+                Схема укладки не строится — стена задана площадью.
+              </div>`
+            : ''
+      }
+    </div>`;
 }
 
 async function renderPageToPdf(doc, html, { isFirstPage, pageW, pageH }) {
   const container = document.createElement('div');
-  container.style.cssText = 'position:fixed;left:-10000px;top:0;background:#fff';
+  container.style.cssText = 'position:fixed;left:-10000px;top:0;background:#fff;';
   container.innerHTML = html;
   document.body.appendChild(container);
 
@@ -282,11 +361,24 @@ async function renderPageToPdf(doc, html, { isFirstPage, pageW, pageH }) {
   ]);
 
   const pageEl = container.querySelector('.pdf-page') ?? container;
+  // Жёстко фиксируем размер страницы перед снимком — без «раздувания» контентом
+  const cssW = Math.round((PAGE_WIDTH_MM / 25.4) * 96);
+  const cssH = Math.round((PAGE_HEIGHT_MM / 25.4) * 96);
+  pageEl.style.width = `${cssW}px`;
+  pageEl.style.height = `${cssH}px`;
+  pageEl.style.overflow = 'hidden';
+
+  await new Promise((r) => requestAnimationFrame(r));
+
   const canvas = await html2canvas(pageEl, {
     scale: 2,
     backgroundColor: '#ffffff',
     useCORS: true,
     logging: false,
+    width: cssW,
+    height: cssH,
+    windowWidth: cssW,
+    windowHeight: cssH,
   });
 
   document.body.removeChild(container);
@@ -294,9 +386,7 @@ async function renderPageToPdf(doc, html, { isFirstPage, pageW, pageH }) {
   if (!isFirstPage) doc.addPage();
 
   const imgData = canvas.toDataURL('image/jpeg', 0.92);
-  const imgH = (canvas.height * pageW) / canvas.width;
-  const drawH = Math.min(imgH, pageH);
-  doc.addImage(imgData, 'JPEG', 0, 0, pageW, drawH);
+  doc.addImage(imgData, 'JPEG', 0, 0, pageW, pageH);
 }
 
 export async function exportCalculationPDF({
