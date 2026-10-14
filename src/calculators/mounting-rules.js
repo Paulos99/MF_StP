@@ -1,6 +1,7 @@
 /**
  * Правила монтажа MultiFRAME.
- * Параметры каркаса — шаг профилей 600 мм, шаг подвесов 550 мм.
+ * Стены — по аналогии с Кнауф С623; потолок — с П113.
+ * Продуктовые шаги: профили 600 мм, подвесы/кронштейны 550 мм.
  */
 import {
   calcWallFrameMetrics,
@@ -27,7 +28,7 @@ export const MOUNTING_RULES = {
     anchorSku: 'Анкер подвеса к перекрытию',
     panelFastenerSku: 'Саморез крепления панели к каркасу',
     reserve: { panels: 0.05, dowels: 0.15, profiles: 0.1, fasteners: 0.1 },
-    note: 'Каркас: периметр + несущие и поперечные профили, подвесы через 550 мм',
+    note: 'По П113: периметр + несущие/поперечные 600 мм, подвесы только на несущих через 550 мм',
   },
   wall_frameless: {
     label: 'Бескаркасные стены',
@@ -46,7 +47,7 @@ export const MOUNTING_RULES = {
     connectorSku: 'Соединитель профиля',
     panelFastenerSku: 'Саморез крепления панели к каркасу',
     reserve: { panels: 0.05, dowels: 0.15, profiles: 0.1, fasteners: 0.1 },
-    note: 'Каркас: направляющие + стойки 600 мм, обрамление проёмов, крепления 550 мм',
+    note: 'По С623: направляющие + стойки 600 мм, обрамление проёмов, крепления на стойках 550 мм',
   },
 };
 
@@ -60,8 +61,8 @@ function roundQty(n) {
 }
 
 /**
- * Подвесы на несущих профилях с фиксированным шагом hangerStepM (550 мм).
- * Позиции несущих — с правилом 30% до стены.
+ * Подвесы по П113: только на несущих профилях (ось X), шаг hangerStepM.
+ * На поперечных и на периметре (y≈0 / y≈height) не ставим.
  */
 export function getCeilingHangerPoints(widthM, heightM, stepM, hangerStepM) {
   const mainXs = getProfilePositions(widthM, stepM);

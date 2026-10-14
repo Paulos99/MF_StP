@@ -5,6 +5,9 @@ const EPS = 1e-6;
 /** Не ставить последний профиль, если до стены остаётся < 30% шага */
 export const LAST_PROFILE_MIN_GAP_RATIO = 0.3;
 
+/** Мин. дистанция между точками крепления (м) — без кластеров */
+const BRACKET_MIN_SEP_M = 0.1;
+
 /** Проёмы в координатах стены: x вдоль стены, y от пола вверх */
 export function openingsToRects(openings = []) {
   return openings.map((o) => ({
@@ -49,7 +52,6 @@ export function getProfilePositions(lengthM, stepM, minGapRatio = LAST_PROFILE_M
   const positions = [0];
 
   for (let x = stepM; x < lengthM - EPS; x += stepM) {
-    // Не ставим профиль, если до стены < 30% шага
     if (lengthM - x < minGap - EPS) break;
     positions.push(+x.toFixed(6));
   }
@@ -84,7 +86,7 @@ export function floorTrackSegments(wallWidth, openings = []) {
 }
 
 /**
- * Горизонтальные обрамления проёмов:
+ * Горизонтальные обрамления проёмов (С623):
  * окно — верх + низ; дверь — только верх (без пола).
  */
 export function getOpeningFrameHorizontals(openings = []) {
@@ -101,101 +103,80 @@ export function getOpeningFrameHorizontals(openings = []) {
 }
 
 /**
- * Стойки: сетка с правилом 30% + обязательные стойки по краям проёмов.
+ * Стойки по С623: сетка 600 мм + косяки проёмов.
+ * Стойки сетки ближе 30% шага к косяку убираются (без узких «карманов»).
  */
 export function getStudPositions(widthM, stepM, openings = []) {
+  const minClear = LAST_PROFILE_MIN_GAP_RATIO * stepM;
   const base = getProfilePositions(widthM, stepM);
-  const edgeXs = [];
+  const jambs = [];
   for (const o of openings) {
-    edgeXs.push(o.offset);
-    edgeXs.push(o.offset + o.width);
+    if (o.offset >= -EPS && o.offset <= widthM + EPS) jambs.push(o.offset);
+    const right = o.offset + o.width;
+    if (right >= -EPS && right <= widthM + EPS) jambs.push(right);
   }
-  return uniqueSorted([
-    ...base,
-    ...edgeXs.filter((x) => x >= -EPS && x <= widthM + EPS),
-  ]);
+  const jambList = uniqueSorted(jambs);
+
+  const cleared = base.filter((x) => {
+    // Края стены всегда оставляем
+    if (Math.abs(x) < EPS || Math.abs(x - widthM) < EPS) return true;
+    for (const j of jambList) {
+      if (Math.abs(x - j) < minClear - EPS) return false;
+    }
+    return true;
+  });
+
+  return uniqueSorted([...cleared, ...jambList]);
 }
 
 /**
- * Точки крепления (кронштейны/подвесы) вдоль стоек + над/под проёмами.
- * Над проёмом — всегда; под — только для окон (не от пола).
+ * Крепления к стене (С623): только на вертикальных стойках, шаг bracketStepM.
+ * Короткий сегмент над дверью / под окном без точки шага → одна mid-точка.
+ * Без ряда на перемычке/подоконнике.
  */
 export function getWallBracketPoints(widthM, heightM, openings = [], stepM = 0.6, bracketStepM = 0.55) {
   const rects = openingsToRects(openings);
   const studPositions = getStudPositions(widthM, stepM, openings);
   const points = [];
-  const key = (x, y) => `${x.toFixed(4)}:${y.toFixed(4)}`;
-  const seen = new Set();
+
+  const tooClose = (x, y) => {
+    for (const p of points) {
+      if (Math.abs(p.x - x) < EPS && Math.abs(p.y - y) < BRACKET_MIN_SEP_M - EPS) return true;
+    }
+    return false;
+  };
 
   const add = (x, y) => {
     if (x < -EPS || x > widthM + EPS || y < EPS || y > heightM - EPS) return;
-    // Не ставим крепёж внутри проёма
     for (const o of rects) {
       if (x > o.x + EPS && x < o.x + o.w - EPS && y > o.y + EPS && y < o.y + o.h - EPS) {
         return;
       }
     }
-    const k = key(x, y);
-    if (seen.has(k)) return;
-    seen.add(k);
+    if (tooClose(x, y)) return;
     points.push({ x: +x.toFixed(6), y: +y.toFixed(6) });
   };
 
   for (const x of studPositions) {
     const segments = verticalStudSegmentsAt(x, heightM, rects);
     for (const [y1, y2] of segments) {
+      let placed = 0;
       for (let y = y1 + bracketStepM; y < y2 - EPS; y += bracketStepM) {
         add(x, y);
+        placed += 1;
+      }
+      // Короткий сегмент над/под проёмом: хотя бы одно крепление
+      if (placed === 0 && y2 - y1 > BRACKET_MIN_SEP_M * 2) {
+        add(x, (y1 + y2) / 2);
       }
     }
-  }
-
-  // Обязательные крепления над и под проёмами (на стойках обрамления и промежуточных)
-  for (const o of rects) {
-    const topY = o.y + o.h;
-    const bottomY = o.y;
-    const edgeXs = uniqueSorted([
-      o.x,
-      o.x + o.w,
-      ...studPositions.filter((x) => x > o.x + EPS && x < o.x + o.w - EPS),
-    ]);
-
-    for (const x of edgeXs) {
-      // Над проёмом — на стойке сразу выше перемычки
-      if (topY < heightM - EPS) {
-        const aboveSegs = verticalStudSegmentsAt(x, heightM, rects).filter(
-          ([a, b]) => a <= topY + EPS && b > topY + EPS
-        );
-        if (aboveSegs.length || Math.abs(x - o.x) < EPS || Math.abs(x - o.x - o.w) < EPS) {
-          add(x, Math.min(heightM - EPS, topY + Math.min(bracketStepM * 0.5, (heightM - topY) * 0.5)));
-        }
-      }
-
-      // Под проёмом — только окно (не дверь от пола)
-      if (bottomY > EPS) {
-        const belowSegs = verticalStudSegmentsAt(x, heightM, rects).filter(
-          ([a, b]) => b >= bottomY - EPS && a < bottomY - EPS
-        );
-        if (belowSegs.length || Math.abs(x - o.x) < EPS || Math.abs(x - o.x - o.w) < EPS) {
-          add(x, Math.max(EPS, bottomY - Math.min(bracketStepM * 0.5, bottomY * 0.5)));
-        }
-      }
-    }
-
-    // Крепления на самой перемычке / подоконной перекладине (шаг подвесов)
-    for (let x = o.x; x <= o.x + o.w + EPS; x += bracketStepM) {
-      add(Math.min(x, o.x + o.w), topY);
-      if (bottomY > EPS) add(Math.min(x, o.x + o.w), bottomY);
-    }
-    add(o.x + o.w, topY);
-    if (bottomY > EPS) add(o.x + o.w, bottomY);
   }
 
   return points;
 }
 
 /**
- * Метрики каркаса стены с учётом проёмов и обрамления.
+ * Метрики каркаса стены с учётом проёмов и обрамления (С623).
  */
 export function calcWallFrameMetrics(widthM, heightM, openings = [], stepM = 0.6, bracketStepM = 0.55) {
   const rects = openingsToRects(openings);

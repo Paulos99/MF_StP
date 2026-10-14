@@ -16,7 +16,7 @@ const FRAME_COLOR_MAIN = '#E65100';
 const HANGER_COLOR = '#1565C0';
 
 /**
- * Рисует сетку каркаса поверх панелей.
+ * Каркас потолка по логике П113: несущие (подвесы) + поперечные + периметр.
  * @param {CanvasRenderingContext2D} ctx — контекст с уже применённым translate
  * @param {{ widthM, heightM, stepM?, hangerStepM? }} bounds
  * @param {number} scale
@@ -34,6 +34,7 @@ export function drawFrameGrid(ctx, bounds, scale, options = {}) {
   const showHangers = options.showHangers !== false;
   const isWall = options.isWall === true;
 
+  // Несущие — вдоль X (вертикальные линии на плане); поперечные — вдоль Y
   const mainXs = getProfilePositions(widthM, stepM);
   const crossYs = getProfilePositions(heightM, stepM);
 
@@ -52,9 +53,9 @@ export function drawFrameGrid(ctx, bounds, scale, options = {}) {
 
   ctx.globalAlpha = 0.92;
 
-  // Поперечные линии (по X)
-  ctx.strokeStyle = FRAME_COLOR;
-  ctx.lineWidth = 2;
+  // Несущие (на них подвесы)
+  ctx.strokeStyle = FRAME_COLOR_MAIN;
+  ctx.lineWidth = 2.5;
   ctx.setLineDash([]);
   for (const xM of mainXs) {
     const x = xM * scale;
@@ -64,9 +65,9 @@ export function drawFrameGrid(ctx, bounds, scale, options = {}) {
     ctx.stroke();
   }
 
-  // Несущие линии (по Y)
-  ctx.strokeStyle = FRAME_COLOR_MAIN;
-  ctx.lineWidth = 2.5;
+  // Поперечные (крабы в пересечениях — без подвесов)
+  ctx.strokeStyle = FRAME_COLOR;
+  ctx.lineWidth = 2;
   for (const yM of crossYs) {
     const y = yM * scale;
     ctx.beginPath();
@@ -75,7 +76,7 @@ export function drawFrameGrid(ctx, bounds, scale, options = {}) {
     ctx.stroke();
   }
 
-  // Периметр
+  // Периметр (ПН)
   ctx.strokeStyle = FRAME_COLOR_MAIN;
   ctx.lineWidth = 3;
   ctx.strokeRect(0.5, 0.5, w - 1, h - 1);
@@ -96,7 +97,7 @@ export function drawFrameGrid(ctx, bounds, scale, options = {}) {
         }
       }
     } else {
-      // Подвесы на несущих с фиксированным шагом 550 мм
+      // П113: подвесы только на несущих, без точек на периметре
       const hangerYs = [];
       for (let y = hangerStepM; y < heightM - EPS; y += hangerStepM) {
         hangerYs.push(y);
@@ -108,12 +109,6 @@ export function drawFrameGrid(ctx, bounds, scale, options = {}) {
           ctx.arc(x, yM * scale, 3.5, 0, Math.PI * 2);
           ctx.fill();
         }
-        // Точка крепления у края
-        ctx.fillStyle = '#0D47A1';
-        ctx.beginPath();
-        ctx.arc(x, 0, 4, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.fillStyle = HANGER_COLOR;
       }
     }
   }
@@ -143,8 +138,8 @@ export function getWallFrameBounds(wallLength, wallHeight) {
 }
 
 /**
- * Каркас стены: направляющие, стойки с шагом 30%-правила,
- * обрамление проёмов, крепления с шагом 550 мм над/под проёмами.
+ * Каркас стены по С623: направляющие, стойки без «карманов» у проёмов,
+ * обрамление, крепления только на вертикалях с шагом 550 мм.
  */
 export function drawWallFrameGrid(ctx, bounds, scale, options = {}) {
   const {
@@ -182,7 +177,7 @@ export function drawWallFrameGrid(ctx, bounds, scale, options = {}) {
     ctx.stroke();
   }
 
-  // Стойки (сетка + края проёмов)
+  // Стойки
   ctx.strokeStyle = FRAME_COLOR;
   ctx.lineWidth = 2;
   const studPositions = getStudPositions(widthM, stepM, openings);
@@ -197,7 +192,7 @@ export function drawWallFrameGrid(ctx, bounds, scale, options = {}) {
     }
   }
 
-  // Горизонтальное обрамление проёмов (перемычка; для окна — ещё подоконная)
+  // Перемычка / подоконная (без подвесов на них)
   ctx.strokeStyle = FRAME_COLOR_MAIN;
   ctx.lineWidth = 2.5;
   for (const seg of horizontals) {
@@ -208,7 +203,6 @@ export function drawWallFrameGrid(ctx, bounds, scale, options = {}) {
     ctx.stroke();
   }
 
-  // Кронштейны / подвесы: шаг 550 мм + над и под проёмами
   if (options.showHangers !== false) {
     ctx.fillStyle = HANGER_COLOR;
     const points = getWallBracketPoints(widthM, heightM, openings, stepM, hangerStepM);
