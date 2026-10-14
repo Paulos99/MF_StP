@@ -216,6 +216,7 @@ export class SketchEditor {
         this.onRoomChange?.(this._roomChangePayload());
         this.render();
       },
+      onOpeningDelete: (id) => this._deleteOpeningById(id),
     });
 
     this.openingsPlanEditor = new PlanEditor(this._q('#sketchOpeningsPlanCanvas'), {
@@ -2514,13 +2515,24 @@ export class SketchEditor {
     if (id) {
       const o = this.room?.getOpening(id);
       if (o) {
+        // Не переключать стену, если проём уже на текущей — иначе при драге
+        // лишний refresh сбрасывает ощущение «я на BC».
+        const wallChanged = o.wallId !== this.selectedWallId;
         this.selectedWallId = o.wallId;
         this._syncOpeningProps(id);
+        this.wallElevation.selectOpening(id);
+        if (wallChanged) this._refreshOpeningsPanel();
+        else {
+          this.openingsPlanEditor.selectOpening(id);
+          this._renderWallChips();
+        }
+        this.render();
+        return;
       }
-    } else {
-      this._q('#sketchOpeningProps').hidden = true;
     }
-    this.wallElevation.selectOpening(id);
+    this._q('#sketchOpeningProps').hidden = true;
+    this.wallElevation.selectOpening(null);
+    this.openingsPlanEditor.selectOpening(null);
     this._refreshOpeningsPanel();
     this.render();
   }
@@ -2560,12 +2572,20 @@ export class SketchEditor {
     this.render();
   }
 
-  _deleteSelectedOpening() {
-    if (!this.selectedOpeningId || !this.room) return;
-    this.room.removeOpening(this.selectedOpeningId);
-    this._selectOpening(null);
+  _deleteOpeningById(id) {
+    if (!id || !this.room) return;
+    this.room.removeOpening(id);
+    if (this.selectedOpeningId === id) this._selectOpening(null);
+    else {
+      this._refreshOpeningsPanel();
+      this.render();
+    }
     this.onRoomChange?.(this._roomChangePayload());
-    this.render();
+  }
+
+  _deleteSelectedOpening() {
+    if (!this.selectedOpeningId) return;
+    this._deleteOpeningById(this.selectedOpeningId);
   }
 
   _refreshOpeningsPanel() {

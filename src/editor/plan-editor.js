@@ -146,9 +146,14 @@ export class PlanEditor {
   hitTestOpening(cx, cy, threshold) {
     if (!this.room) return null;
     const hit = threshold ?? this._wallHitThreshold();
+    // Только проёмы активной стены — иначе у угла B цепляется проём соседней AB
+    // и переключает развёртку при попытке подвинуть окно на BC.
+    const candidates = this.selectedWallId
+      ? this.room.openings.filter((o) => o.wallId === this.selectedWallId)
+      : this.room.openings;
     let best = null;
     let bestDist = hit;
-    for (const opening of this.room.openings) {
+    for (const opening of candidates) {
       const wall = this.room.walls.find((w) => w.id === opening.wallId);
       if (!wall) continue;
       const { x1, y1, x2, y2 } = this.wallToCanvas(wall);

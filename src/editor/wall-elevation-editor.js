@@ -11,6 +11,7 @@ export class WallElevationEditor {
   constructor(canvas, {
     onOpeningSelect,
     onOpeningChange,
+    onOpeningDelete,
     onWallClick,
   } = {}) {
     this.canvas = canvas;
@@ -20,9 +21,12 @@ export class WallElevationEditor {
     this.selectedOpeningId = null;
     this.onOpeningSelect = onOpeningSelect;
     this.onOpeningChange = onOpeningChange;
+    this.onOpeningDelete = onOpeningDelete;
     this.onWallClick = onWallClick;
     this._dragOpeningId = null;
     this._dragGrabDelta = 0;
+    /** @type {{ openingId: string, cx: number, cy: number, r: number }[]} */
+    this._deleteHits = [];
     this.userZoom = 1;
     this.panX = 0;
     this.panY = 0;
@@ -197,6 +201,7 @@ export class WallElevationEditor {
     }
 
     const openings = this.room.getOpeningsForWall(wall.id);
+    this._deleteHits = [];
     for (const o of openings) {
       const box = this._openingBox(o, ox, oy, s, wh);
       const active = o.id === this.selectedOpeningId || o.id === this._dragOpeningId;
@@ -221,6 +226,23 @@ export class WallElevationEditor {
         this.ctx.fill();
         this.ctx.stroke();
       }
+
+      // Крестик удаления на каждом проёме текущей стены
+      const del = this._deleteBtnRect(box);
+      this._deleteHits.push({ openingId: o.id, ...del });
+      this.ctx.fillStyle = '#c0392b';
+      this.ctx.beginPath();
+      this.ctx.arc(del.cx, del.cy, del.r, 0, Math.PI * 2);
+      this.ctx.fill();
+      this.ctx.strokeStyle = '#fff';
+      this.ctx.lineWidth = 2;
+      const arm = del.r * 0.45;
+      this.ctx.beginPath();
+      this.ctx.moveTo(del.cx - arm, del.cy - arm);
+      this.ctx.lineTo(del.cx + arm, del.cy + arm);
+      this.ctx.moveTo(del.cx + arm, del.cy - arm);
+      this.ctx.lineTo(del.cx - arm, del.cy + arm);
+      this.ctx.stroke();
 
       this.ctx.fillStyle = '#fff';
       this.ctx.font = 'bold 11px system-ui';
@@ -248,6 +270,23 @@ export class WallElevationEditor {
       y = oy + wh - (o.sillHeight + o.height) * s;
     }
     return { x, y, w, h };
+  }
+
+  _deleteBtnRect(box) {
+    const r = this._isCoarsePointer() ? 14 : 11;
+    return {
+      cx: box.x + box.w - 2,
+      cy: box.y + 2,
+      r,
+    };
+  }
+
+  hitTestDeleteBtn(cx, cy) {
+    const pad = this._isCoarsePointer() ? 6 : 2;
+    for (const del of this._deleteHits) {
+      if (Math.hypot(cx - del.cx, cy - del.cy) <= del.r + pad) return del.openingId;
+    }
+    return null;
   }
 
   _clientToCanvas(e) {
@@ -376,6 +415,15 @@ export class WallElevationEditor {
   handlePointerDown(e) {
     if (e.button !== undefined && e.button !== 0) return;
     const { cx, cy } = this._clientToCanvas(e);
+
+    const deleteId = this.hitTestDeleteBtn(cx, cy);
+    if (deleteId) {
+      this._dragOpeningId = null;
+      this._panning = false;
+      this.onOpeningDelete?.(deleteId);
+      return;
+    }
+
     const hit = this.hitTestOpening(cx, cy);
     if (hit) {
       const s = this.getScale();

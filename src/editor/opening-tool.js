@@ -71,7 +71,8 @@ export function bindOpeningForm(form, getRoom, planEditor, onChange, onRender, o
   }
 
   function applyFormToOpening(o) {
-    o.wallId = getSelectedWallId() || o.wallId;
+    // Не переназначаем стену при правке размеров — иначе проём «переезжает»
+    // на другую стену, если чип/селект рассинхронизирован.
     o.type = openingType.value;
     o.offset = roundMeters(parseLocaleNumber(openingOffset.value) || 0);
     o.width = roundMeters(parseLocaleNumber(openingWidth.value) || o.width);
