@@ -41,14 +41,20 @@ function uniqueSorted(values) {
   return out;
 }
 
+/** Мин. пролёт между соседними профилями (30% шага) */
+export function minProfileClearance(stepM, minGapRatio = LAST_PROFILE_MIN_GAP_RATIO) {
+  return minGapRatio * stepM;
+}
+
 /**
  * Позиции профилей вдоль оси [0..lengthM] с шагом stepM.
  * Края (0 и lengthM) всегда есть; последний промежуточный не ставится,
- * если до стены остаётся меньше 30% шага.
+ * если до конечного профиля остаётся меньше max(30% шага, 250 мм).
  */
 export function getProfilePositions(lengthM, stepM, minGapRatio = LAST_PROFILE_MIN_GAP_RATIO) {
   if (lengthM <= EPS) return [0];
-  const minGap = minGapRatio * stepM;
+  // 250 мм — чтобы на длинах вроде 5.0 м не оставалась пара 4.8+5.0
+  const minGap = Math.max(minProfileClearance(stepM, minGapRatio), 0.25);
   const positions = [0];
 
   for (let x = stepM; x < lengthM - EPS; x += stepM) {
@@ -58,7 +64,17 @@ export function getProfilePositions(lengthM, stepM, minGapRatio = LAST_PROFILE_M
 
   const last = positions[positions.length - 1];
   if (Math.abs(last - lengthM) > EPS) {
+    if (positions.length > 1 && lengthM - last < minGap - EPS) {
+      positions.pop();
+    }
     positions.push(+lengthM.toFixed(6));
+  }
+
+  while (positions.length > 2) {
+    const a = positions[positions.length - 2];
+    const b = positions[positions.length - 1];
+    if (b - a >= minGap - EPS) break;
+    positions.splice(positions.length - 2, 1);
   }
 
   return positions;
@@ -102,31 +118,64 @@ export function getOpeningFrameHorizontals(openings = []) {
   return segs;
 }
 
+function isStrictlyInsideOpening(x, rects) {
+  return rects.some((o) => x > o.x + EPS && x < o.x + o.w - EPS);
+}
+
+function farEnoughFromAll(x, positions, minClear) {
+  return positions.every((p) => Math.abs(p - x) >= minClear + EPS);
+}
+
 /**
- * Стойки по С623: сетка 600 мм + косяки проёмов.
- * Стойки сетки ближе 30% шага к косяку убираются (без узких «карманов»).
+ * Стойки по С623:
+ * — края стены и косяки проёмов обязательны;
+ * — сетка 600 мм снаружи проёмов, без позиций ближе 30% шага к обязательным;
+ * — внутри проёма сетку не тащим (иначе короткие «огрызки» у косяков);
+ * — над/под проёмом — короткие стойки с шагом от левого косяка.
  */
 export function getStudPositions(widthM, stepM, openings = []) {
-  const minClear = LAST_PROFILE_MIN_GAP_RATIO * stepM;
-  const base = getProfilePositions(widthM, stepM);
-  const jambs = [];
+  // Как у края стены: не ближе 30% шага и не уже 250 мм
+  const minClear = Math.max(minProfileClearance(stepM), 0.25);
+  const rects = openingsToRects(openings);
+
+  const required = [0, widthM];
   for (const o of openings) {
-    if (o.offset >= -EPS && o.offset <= widthM + EPS) jambs.push(o.offset);
+    if (o.offset >= -EPS && o.offset <= widthM + EPS) required.push(o.offset);
     const right = o.offset + o.width;
-    if (right >= -EPS && right <= widthM + EPS) jambs.push(right);
+    if (right >= -EPS && right <= widthM + EPS) required.push(right);
   }
-  const jambList = uniqueSorted(jambs);
+  let result = uniqueSorted(required);
 
-  const cleared = base.filter((x) => {
-    // Края стены всегда оставляем
-    if (Math.abs(x) < EPS || Math.abs(x - widthM) < EPS) return true;
-    for (const j of jambList) {
-      if (Math.abs(x - j) < minClear - EPS) return false;
+  // Сетка только вне проёмов и не ближе minClear к обязательным
+  for (const x of getProfilePositions(widthM, stepM)) {
+    if (result.some((p) => Math.abs(p - x) < EPS)) continue;
+    if (isStrictlyInsideOpening(x, rects)) continue;
+    if (!farEnoughFromAll(x, result, minClear)) continue;
+    result.push(x);
+  }
+  result = uniqueSorted(result);
+
+  // Короткие стойки в створе проёма (над перемычкой / под подоконником)
+  for (const o of rects) {
+    const left = o.x;
+    const right = o.x + o.w;
+    const candidates = [];
+    for (let x = left + stepM; x <= right - stepM + EPS; x += stepM) {
+      candidates.push(+x.toFixed(6));
     }
-    return true;
-  });
+    // Широкий проём без попадания шага — одна стойка по центру
+    if (!candidates.length && right - left > stepM + EPS) {
+      candidates.push(+((left + right) / 2).toFixed(6));
+    }
+    for (const x of candidates) {
+      if (x <= left + EPS || x >= right - EPS) continue;
+      if (!farEnoughFromAll(x, result, minClear)) continue;
+      result.push(x);
+    }
+    result = uniqueSorted(result);
+  }
 
-  return uniqueSorted([...cleared, ...jambList]);
+  return result;
 }
 
 /**
