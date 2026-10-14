@@ -1,8 +1,10 @@
 import { MOUNTING_RULES } from '../calculators/mounting-rules.js';
 import {
-  calcWallFrameMetrics,
   floorTrackSegments,
+  getOpeningFrameHorizontals,
+  getProfilePositions,
   getStudPositions,
+  getWallBracketPoints,
   openingsToRects,
   verticalStudSegmentsAt,
 } from '../calculators/wall-frame.js';
@@ -24,15 +26,16 @@ export function drawFrameGrid(ctx, bounds, scale, options = {}) {
     widthM,
     heightM,
     stepM = MOUNTING_RULES.ceiling_framed.profileStepM,
-    hangerStepM = MOUNTING_RULES.ceiling_framed.hangerStepM ?? 1.0,
+    hangerStepM = MOUNTING_RULES.ceiling_framed.hangerStepM ?? 0.55,
   } = bounds;
 
   const w = widthM * scale;
   const h = heightM * scale;
-  const step = stepM * scale;
-  const hangerStep = hangerStepM * scale;
   const showHangers = options.showHangers !== false;
   const isWall = options.isWall === true;
+
+  const mainXs = getProfilePositions(widthM, stepM);
+  const crossYs = getProfilePositions(heightM, stepM);
 
   ctx.save();
 
@@ -49,21 +52,23 @@ export function drawFrameGrid(ctx, bounds, scale, options = {}) {
 
   ctx.globalAlpha = 0.92;
 
-  // Поперечные линии
+  // Поперечные линии (по X)
   ctx.strokeStyle = FRAME_COLOR;
   ctx.lineWidth = 2;
   ctx.setLineDash([]);
-  for (let x = 0; x <= w + 0.5; x += step) {
+  for (const xM of mainXs) {
+    const x = xM * scale;
     ctx.beginPath();
     ctx.moveTo(x, 0);
     ctx.lineTo(x, h);
     ctx.stroke();
   }
 
-  // Несущие линии (для потолка — горизонтальные чуть толще)
+  // Несущие линии (по Y)
   ctx.strokeStyle = FRAME_COLOR_MAIN;
   ctx.lineWidth = 2.5;
-  for (let y = 0; y <= h + 0.5; y += step) {
+  for (const yM of crossYs) {
+    const y = yM * scale;
     ctx.beginPath();
     ctx.moveTo(0, y);
     ctx.lineTo(w, y);
@@ -78,23 +83,32 @@ export function drawFrameGrid(ctx, bounds, scale, options = {}) {
   if (showHangers) {
     ctx.fillStyle = HANGER_COLOR;
     if (isWall) {
-      // Кронштейны вдоль стоек
-      for (let x = 0; x <= w + 0.5; x += step) {
-        for (let y = hangerStep; y < h; y += hangerStep) {
+      const hangerYs = [];
+      for (let y = hangerStepM; y < heightM - EPS; y += hangerStepM) {
+        hangerYs.push(y);
+      }
+      for (const xM of mainXs) {
+        const x = xM * scale;
+        for (const yM of hangerYs) {
           ctx.beginPath();
-          ctx.arc(x, y, 3, 0, Math.PI * 2);
+          ctx.arc(x, yM * scale, 3, 0, Math.PI * 2);
           ctx.fill();
         }
       }
     } else {
-      // Подвесы на несущих линиях
-      for (let x = 0; x <= w + 0.5; x += step) {
-        for (let y = hangerStep; y < h; y += hangerStep) {
+      // Подвесы на несущих с фиксированным шагом 550 мм
+      const hangerYs = [];
+      for (let y = hangerStepM; y < heightM - EPS; y += hangerStepM) {
+        hangerYs.push(y);
+      }
+      for (const xM of mainXs) {
+        const x = xM * scale;
+        for (const yM of hangerYs) {
           ctx.beginPath();
-          ctx.arc(x, y, 3.5, 0, Math.PI * 2);
+          ctx.arc(x, yM * scale, 3.5, 0, Math.PI * 2);
           ctx.fill();
         }
-        // Точка крепления к перекрытию
+        // Точка крепления у края
         ctx.fillStyle = '#0D47A1';
         ctx.beginPath();
         ctx.arc(x, 0, 4, 0, Math.PI * 2);
@@ -129,7 +143,8 @@ export function getWallFrameBounds(wallLength, wallHeight) {
 }
 
 /**
- * Каркас стены: направляющие сверху/снизу и стойки с шагом, без прохода через проёмы.
+ * Каркас стены: направляющие, стойки с шагом 30%-правила,
+ * обрамление проёмов, крепления с шагом 550 мм над/под проёмами.
  */
 export function drawWallFrameGrid(ctx, bounds, scale, options = {}) {
   const {
@@ -140,11 +155,10 @@ export function drawWallFrameGrid(ctx, bounds, scale, options = {}) {
   } = bounds;
   const openings = options.openings ?? [];
   const rects = openingsToRects(openings);
+  const horizontals = getOpeningFrameHorizontals(openings);
 
   const w = widthM * scale;
   const h = heightM * scale;
-  const step = stepM * scale;
-  const bracketStep = hangerStepM * scale;
 
   const roomYToCanvas = (yRoom) => h - yRoom * scale;
 
@@ -168,10 +182,10 @@ export function drawWallFrameGrid(ctx, bounds, scale, options = {}) {
     ctx.stroke();
   }
 
-  // Стойки
+  // Стойки (сетка + края проёмов)
   ctx.strokeStyle = FRAME_COLOR;
   ctx.lineWidth = 2;
-  const studPositions = getStudPositions(widthM, stepM);
+  const studPositions = getStudPositions(widthM, stepM, openings);
   for (const xM of studPositions) {
     const x = xM * scale;
     const segments = verticalStudSegmentsAt(xM, heightM, rects);
@@ -183,19 +197,25 @@ export function drawWallFrameGrid(ctx, bounds, scale, options = {}) {
     }
   }
 
-  // Кронштейны вдоль стоек
+  // Горизонтальное обрамление проёмов (перемычка; для окна — ещё подоконная)
+  ctx.strokeStyle = FRAME_COLOR_MAIN;
+  ctx.lineWidth = 2.5;
+  for (const seg of horizontals) {
+    const y = roomYToCanvas(seg.y);
+    ctx.beginPath();
+    ctx.moveTo(seg.x1 * scale, y);
+    ctx.lineTo(seg.x2 * scale, y);
+    ctx.stroke();
+  }
+
+  // Кронштейны / подвесы: шаг 550 мм + над и под проёмами
   if (options.showHangers !== false) {
     ctx.fillStyle = HANGER_COLOR;
-    for (const xM of studPositions) {
-      const x = xM * scale;
-      const segments = verticalStudSegmentsAt(xM, heightM, rects);
-      for (const [y1, y2] of segments) {
-        for (let yRoom = y1 + hangerStepM; yRoom < y2 - EPS; yRoom += hangerStepM) {
-          ctx.beginPath();
-          ctx.arc(x, roomYToCanvas(yRoom), 3, 0, Math.PI * 2);
-          ctx.fill();
-        }
-      }
+    const points = getWallBracketPoints(widthM, heightM, openings, stepM, hangerStepM);
+    for (const p of points) {
+      ctx.beginPath();
+      ctx.arc(p.x * scale, roomYToCanvas(p.y), 3, 0, Math.PI * 2);
+      ctx.fill();
     }
   }
 

@@ -1,9 +1,11 @@
 /**
  * Правила монтажа MultiFRAME.
- * Параметры каркаса — по типовой схеме подвесного каркаса (шаг 600 мм).
- * Уточните по официальной инструкции StP при получении.
+ * Параметры каркаса — шаг профилей 600 мм, шаг подвесов 550 мм.
  */
-import { calcWallFrameMetrics } from './wall-frame.js';
+import {
+  calcWallFrameMetrics,
+  getProfilePositions,
+} from './wall-frame.js';
 
 export const MOUNTING_RULES = {
   ceiling_frameless: {
@@ -15,7 +17,7 @@ export const MOUNTING_RULES = {
   ceiling_framed: {
     label: 'Каркасный потолок',
     profileStepM: 0.6,
-    hangerStepM: 1.0,
+    hangerStepM: 0.55,
     screwsPerPanel: 4,
     perimeterProfileSku: 'MultiFrame профиль периметральный',
     mainProfileSku: 'MultiFrame профиль несущий',
@@ -25,7 +27,7 @@ export const MOUNTING_RULES = {
     anchorSku: 'Анкер подвеса к перекрытию',
     panelFastenerSku: 'Саморез крепления панели к каркасу',
     reserve: { panels: 0.05, dowels: 0.15, profiles: 0.1, fasteners: 0.1 },
-    note: 'Каркас: периметр + несущие и поперечные профили, подвесы через 1 м',
+    note: 'Каркас: периметр + несущие и поперечные профили, подвесы через 550 мм',
   },
   wall_frameless: {
     label: 'Бескаркасные стены',
@@ -36,7 +38,7 @@ export const MOUNTING_RULES = {
   wall_framed: {
     label: 'Каркасные стены',
     profileStepM: 0.6,
-    bracketStepM: 0.6,
+    bracketStepM: 0.55,
     screwsPerPanel: 4,
     verticalProfileSku: 'MultiFrame профиль стоечный',
     trackProfileSku: 'MultiFrame профиль направляющий',
@@ -44,7 +46,7 @@ export const MOUNTING_RULES = {
     connectorSku: 'Соединитель профиля',
     panelFastenerSku: 'Саморез крепления панели к каркасу',
     reserve: { panels: 0.05, dowels: 0.15, profiles: 0.1, fasteners: 0.1 },
-    note: 'Каркас: направляющие сверху/снизу + стойки с шагом 600 мм',
+    note: 'Каркас: направляющие + стойки 600 мм, обрамление проёмов, крепления 550 мм',
   },
 };
 
@@ -58,10 +60,30 @@ function roundQty(n) {
 }
 
 /**
+ * Подвесы на несущих профилях с фиксированным шагом hangerStepM (550 мм).
+ * Позиции несущих — с правилом 30% до стены.
+ */
+export function getCeilingHangerPoints(widthM, heightM, stepM, hangerStepM) {
+  const mainXs = getProfilePositions(widthM, stepM);
+  const along = [];
+  for (let y = hangerStepM; y < heightM - 1e-6; y += hangerStepM) {
+    along.push(+y.toFixed(6));
+  }
+  if (!along.length && heightM > 1e-6) along.push(+(heightM / 2).toFixed(6));
+  const points = [];
+  for (const x of mainXs) {
+    for (const y of along) {
+      points.push({ x, y });
+    }
+  }
+  return points;
+}
+
+/**
  * @param {string} surfaceType
  * @param {number} widthM
  * @param {number} heightM
- * @param {{ panelCount?: number }} options
+ * @param {{ panelCount?: number, openings?: object[] }} options
  */
 export function calculateFrameMaterials(surfaceType, widthM, heightM, options = {}) {
   const rules = MOUNTING_RULES[surfaceType];
@@ -72,12 +94,15 @@ export function calculateFrameMaterials(surfaceType, widthM, heightM, options = 
 
   if (surfaceType === 'ceiling_framed') {
     const perimeterM = 2 * (widthM + heightM);
-    const mainRuns = Math.ceil(widthM / step) + 1;
-    const crossRuns = Math.ceil(heightM / step) + 1;
+    const mainXs = getProfilePositions(widthM, step);
+    const crossYs = getProfilePositions(heightM, step);
+    const mainRuns = mainXs.length;
+    const crossRuns = crossYs.length;
     const mainLengthM = mainRuns * heightM;
     const crossLengthM = crossRuns * widthM;
-    const hangersPerMain = Math.max(1, Math.ceil(heightM / (rules.hangerStepM ?? 1)));
-    const hangers = mainRuns * hangersPerMain;
+    const hangerStep = rules.hangerStepM ?? 0.55;
+    const hangerPoints = getCeilingHangerPoints(widthM, heightM, step, hangerStep);
+    const hangers = hangerPoints.length;
     const connectors = mainRuns * crossRuns;
     const anchors = hangers;
     const panelScrews = panelCount * (rules.screwsPerPanel ?? 4);
@@ -145,6 +170,7 @@ export function calculateFrameMaterials(surfaceType, widthM, heightM, options = 
       connectors: roundQty(withReserve(connectors, 'fasteners', rules)),
       panelScrews: panelCount > 0 ? roundQty(withReserve(panelScrews, 'fasteners', rules)) : 0,
       profileStepM: step,
+      hangerStepM: hangerStep,
       mainRuns,
       crossRuns,
       isPlaceholder: true,
@@ -158,7 +184,7 @@ export function calculateFrameMaterials(surfaceType, widthM, heightM, options = 
       heightM,
       openings,
       step,
-      rules.bracketStepM ?? step
+      rules.bracketStepM ?? 0.55
     );
     const trackM = metrics.trackM;
     const studLengthM = metrics.studLengthM;
