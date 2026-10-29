@@ -1,5 +1,5 @@
 import { build } from 'esbuild';
-import { copyFileSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'fs';
+import { copyFileSync, cpSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'fs';
 
 // Чистим каталог сборки, чтобы в выпуск не попадали файлы от прошлых сборок
 rmSync('dist', { recursive: true, force: true });
@@ -25,6 +25,9 @@ html = html
 writeFileSync('dist/index.html', html);
 
 copyFileSync('styles.css', 'dist/assets/app.css');
+
+// Шрифт Manrope (url в styles.css относительный: ./fonts/ рядом с app.css)
+cpSync('fonts', 'dist/assets/fonts', { recursive: true });
 
 for (const file of ['logo.png', 'logo-multiframe.png', 'buy.png', 'add-image.png']) {
   try {
