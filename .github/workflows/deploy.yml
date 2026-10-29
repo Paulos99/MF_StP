@@ -1,5 +1,8 @@
 name: Deploy to GitHub Pages
 
+# Проверочный стенд владельца: https://paulos99.github.io/MF_StP/
+# Сборка с относительными путями, поэтому та же сборка работает и на stp-multiframe.ru/calc/.
+
 on:
   push:
     branches:
@@ -30,9 +33,10 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '22'
+          cache: npm
 
       - name: Install and build
-        run: npm install && npm run build:esbuild
+        run: npm ci && npm test && npm run build:esbuild
 
       - name: Setup Pages
         uses: actions/configure-pages@v4
