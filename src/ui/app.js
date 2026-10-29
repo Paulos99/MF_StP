@@ -12,6 +12,7 @@ import { SketchEditor } from '../editor/sketch-editor.js';
 import { validateRoomForm } from '../editor/opening-tool.js';
 import { buildShareUrl, readShareFromUrl, buildProjectPayload } from '../export/share-link.js';
 import { setupAppOnboarding, dismissAppTourIfActive } from './app-onboarding.js';
+import { initCalcMetrika } from './metrika.js';
 
 const AUTO_RECALC_MS = 400;
 const MOBILE_MQ = '(max-width: 899px)';
@@ -2220,3 +2221,4 @@ function resetUiAfterOnboarding() {
 }
 
 document.addEventListener('DOMContentLoaded', init);
+document.addEventListener('DOMContentLoaded', initCalcMetrika);
