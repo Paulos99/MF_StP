@@ -8,11 +8,15 @@
     "build": "vite build",
     "build:esbuild": "node scripts/build-esbuild.mjs",
     "preview": "vite preview",
-    "test:layout": "node scripts/assert-ceiling-layout.mjs"
+    "test:layout": "node scripts/assert-ceiling-layout.mjs",
+    "test": "npm run test:layout"
   },
-  "dependencies": {},
+  "dependencies": {
+    "html2canvas": "^1.4.1",
+    "jspdf": "^4.2.1"
+  },
   "devDependencies": {
-    "esbuild": "^0.24.0",
+    "esbuild": "^0.25.12",
     "vite": "^5.4.11"
   }
 }
