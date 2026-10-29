@@ -51,4 +51,4 @@ npx vite preview --outDir dist     # или любой статический с
 ## Проверочный стенд на GitHub Pages
 
 Рабочий процесс `.github/workflows/deploy.yml` («Deploy to GitHub Pages») при каждом изменении `main` собирает сайт и публикует его на
-https://paulos99.github.io/MF_StP/ . Владелец видит результат до того, как поставит метку выпуска. Стенд не зависит от боевого сервера и не влияет на него.
+https://paulos99.github.io/MF_StP/ . Владелец видит результат до того, как поставит метку выпуска. Стенд не зависит от боевого сервера и не влияет на него. Стенд скрыт от поисковиков: при сборке рабочим процессом GitHub Pages в `index.html` добавляется `<meta name="robots" content="noindex,nofollow">` и создаётся `robots.txt` с `Disallow: /` (`scripts/build-esbuild.mjs`); в выпуске по метке и в локальной сборке их нет, на стенде нет и Метрики.
