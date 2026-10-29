@@ -9,6 +9,8 @@ npm install
 npm run dev
 ```
 
+Пакет документов для команды, размещающей сайт на `stp-multiframe.ru/calc/` (выпуски по метке, установка, откат, безопасность): [docs/handover/](docs/handover/README.md).
+
 Сборка для GitHub Pages:
 
 ```bash

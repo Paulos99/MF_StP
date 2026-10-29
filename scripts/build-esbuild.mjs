@@ -1,6 +1,8 @@
 import { build } from 'esbuild';
-import { copyFileSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
+import { copyFileSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'fs';
 
+// Чистим каталог сборки, чтобы в выпуск не попадали файлы от прошлых сборок
+rmSync('dist', { recursive: true, force: true });
 mkdirSync('dist/assets', { recursive: true });
 
 await build({

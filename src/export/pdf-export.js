@@ -357,7 +357,7 @@ async function renderPageToPdf(doc, html, { isFirstPage, pageW, pageH }) {
   await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
 
   const [{ default: html2canvas }] = await Promise.all([
-    import('https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/+esm'),
+    import('html2canvas'),
   ]);
 
   const pageEl = container.querySelector('.pdf-page') ?? container;
@@ -398,7 +398,7 @@ export async function exportCalculationPDF({
   areaEstimate = false,
 }) {
   const [{ jsPDF }] = await Promise.all([
-    import('https://cdn.jsdelivr.net/npm/jspdf@2.5.1/+esm'),
+    import('jspdf'),
   ]);
 
   const dateStr = formatDate();
