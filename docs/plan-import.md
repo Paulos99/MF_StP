@@ -16,7 +16,8 @@ and calibration flow is still available beside it. Help is optional, inside
    buttons. They are NOT wall measurements. A number with no recognized unit stays
    unitless. Low-confidence text is marked; all recognition requires human review.
 4. Select two points of a known segment (at least 10 pixels apart), type a real
-   length and explicitly choose mm/cm/m. OCR can fill that input only after clicking
+   length and explicitly choose mm/cm/m. Calibration taps within 16 CSS pixels
+   of an existing corner snap to that corner to avoid touch-position scale drift. OCR can fill that input only after clicking
    a candidate. Uniform scale is computed from this user-selected segment; each
    wall's derived length and total area are displayed for review.
 5. The review checkbox and **Применить к комнате** are required. Any edit invalidates
@@ -62,8 +63,13 @@ See `plan-import-licenses.txt`; full runtime license/notices are copied to
 - CV visits at most 1,000,000 pixels, traces at most 32 eligible enclosed regions,
   returns at most 12 proposals, limits boundary complexity, and accepts at most
   64 vertices. Timers terminate CV after 15 seconds and OCR after 90 seconds.
-- Stop, cancel, replacement upload and dialog close terminate the worker tree;
-  stale messages/decodes are ignored. Bitmaps are closed; no object URLs are used.
+- Stop, cancel, replacement upload and dialog close first invalidate UI ownership.
+  The OCR host explicitly terminates its tracked children (including during initial
+  model loading), then ACKs; the document terminates the host after that ACK. A
+  500 ms hard fallback covers unresponsive/failed host startup. Completed OCR also
+  terminates its child before publishing results. Browser-specific hard-fallback
+  orphan-worker cleanup still needs real-device verification. Stale messages/decodes
+  are ignored. Bitmaps/canvas surfaces are released; no object URLs are used.
 - No arbitrary BTI reliability claim. The detector is a simple dark-wall/light-room
   algorithm, not OpenCV/semantic recognition. Open door gaps, photos with shadows,
   rotated/skewed drawings and clutter may fail or produce wrong proposals. It does
@@ -81,7 +87,7 @@ See `plan-import-licenses.txt`; full runtime license/notices are copied to
 
 ```
 npm ci
-npm test                # existing layout invariants + 17 deterministic import checks
+npm test                # existing layout invariants + 26 deterministic import checks
 npm run test:ocr        # real Tesseract Node smoke test, self-hosted model files
 npm run build
 npm run build:esbuild

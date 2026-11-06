@@ -15,4 +15,9 @@ try {
   assert.ok(parsed.some(c => c.value === 2.7 && [null, 'm'].includes(c.unit)), data.text);
   assert.ok(data.blocks?.[0]?.paragraphs?.[0]?.lines?.[0]?.words?.[0]?.bbox);
   console.log(JSON.stringify({ text: data.text, confidence: data.confidence, parsed }, null, 2));
+  const labeled = await worker.recognize('scripts/fixtures/plan-import/rectangle-labeled.png');
+  const dimensions = parseDimensions(labeled.data.text);
+  assert.ok(dimensions.some(c => c.value === 4000 && c.unit === 'mm'), labeled.data.text);
+  assert.ok(dimensions.some(c => c.value === 3000 && c.unit === 'mm'), labeled.data.text);
+  console.log(JSON.stringify({ labeledFixture: labeled.data.text, confidence: labeled.data.confidence }, null, 2));
 } finally { await worker.terminate(); }

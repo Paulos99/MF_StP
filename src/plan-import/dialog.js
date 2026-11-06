@@ -1,3 +1,4 @@
+import { retireWorker } from './retire-worker.js';
 import { MAX_SIDE, checkFile, imageDimensions, parseDimensions, calibratedGeometry, distance, validatePolygon } from './core.js';
 
 const el = (tag, text) => { const node = document.createElement(tag); node.textContent = text; return node; };
@@ -19,7 +20,7 @@ export function openPlanImport({ onApply, onClose = () => {} }) {
       <div class="plan-import__actions"><button type="button" data-id="draw">Обвести заново</button><button type="button" data-id="undo">Убрать последний угол</button><button type="button" data-id="finish">Замкнуть контур</button><button type="button" data-id="calibrate">Задать масштаб по двум точкам</button></div>
       <p data-id="hint">Выберите найденный контур или обведите комнату.</p>
       <canvas data-id="canvas" aria-label="Изображение плана с углами и размерами"></canvas>
-      <details><summary>Углы: правка без перетаскивания</summary><div data-id="vertices"></div></details>
+      <details><summary>Углы (пиксели): правка без перетаскивания</summary><div data-id="vertices"></div></details>
       <fieldset><legend>Известный отрезок</legend><p data-id="segment">Отметьте две точки на изображении.</p><label>Длина<input data-id="length" type="text" inputmode="decimal" autocomplete="off" placeholder="Например, 3500"></label><label>Единицы<select data-id="unit"><option value="">Выберите</option><option value="mm">мм</option><option value="cm">см</option><option value="m">м</option></select></label></fieldset>
       <details open><summary>Текст OCR, не размеры стен</summary><p>Числа могут быть площадью, номером комнаты или ошибкой. Выберите число только для известного отрезка. При отсутствии единиц выберите их вручную.</p><div data-id="words"></div></details>
       <p data-id="validation"></p><ol data-id="dimensions"></ol>
@@ -32,17 +33,22 @@ export function openPlanImport({ onApply, onClose = () => {} }) {
   const q = id => dialog.querySelector(`[data-id="${id}"]`);
   const canvas = q('canvas'), ctx = canvas.getContext('2d');
   let image = null, points = [], candidates = [], words = [], calibration = {}, mode = 'edit', closed = false;
-  let worker = null, timer = null, loadId = 0, disposed = false, busy = false, dragging = -1, result = null;
+  let worker = null, workerKind = null, timer = null, loadId = 0, disposed = false, busy = false, dragging = -1, result = null;
   const status = text => { q('status').textContent = text; };
-  function stop(message) {
-    worker?.terminate(); worker = null; clearTimeout(timer); busy = false;
+  function stop(message, { finished = false } = {}) {
+    const previous = worker, kind = workerKind;
+    worker = null; workerKind = null; // Ignore stale messages before retiring.
+    retireWorker(previous, { cooperative: kind === 'ocr', finished });
+    clearTimeout(timer); busy = false;
+    q('confirmed').disabled = false;
     q('progress').hidden = true; q('stop').hidden = true;
     for (const id of ['detect', 'ocr']) q(id).disabled = !image;
     if (message) status(message);
   }
+  function releaseImage() { if (image) image.width = image.height = 1; image = null; }
   function cleanup() {
     if (disposed) return;
-    disposed = true; loadId++; stop(); image = null; canvas.width = canvas.height = 1;
+    disposed = true; loadId++; stop(); releaseImage(); canvas.width = canvas.height = 1;
     dialog.close(); dialog.remove(); onClose();
   }
   dialog.addEventListener('cancel', e => { e.preventDefault(); cleanup(); });
@@ -52,6 +58,8 @@ export function openPlanImport({ onApply, onClose = () => {} }) {
   function update() {
     result = null;
     try {
+      const invalidCoordinate = [...q('vertices').querySelectorAll('input')].some(input => !input.value.trim() || !Number.isFinite(Number(input.value)) || Number(input.value) < 0 || Number(input.value) > Number(input.max));
+      if (invalidCoordinate) throw new Error('Проверьте координаты: они должны быть внутри изображения.');
       if (!closed) throw new Error('Выберите или замкните контур.');
       result = calibratedGeometry(points, { ...calibration, length: q('length').value, unit: q('unit').value });
       q('validation').textContent = `Площадь: ${result.area.toFixed(2)} м². Проверьте стены:`;
@@ -105,7 +113,11 @@ export function openPlanImport({ onApply, onClose = () => {} }) {
       for (const axis of ['x', 'y']) {
         const lab = el('label', axis.toUpperCase()); const input = document.createElement('input');
         input.type = 'number'; input.min = '0'; input.max = String(axis === 'x' ? canvas.width : canvas.height); input.step = '1'; input.value = p[axis].toFixed(0);
-        input.onchange = () => { const v = Number(input.value); if (Number.isFinite(v) && v >= 0 && v <= Number(input.max)) { p[axis] = v; invalidate(); } };
+        input.oninput = input.onchange = () => {
+          const v = Number(input.value);
+          if (input.value.trim() && Number.isFinite(v) && v >= 0 && v <= Number(input.max)) p[axis] = v;
+          invalidate();
+        };
         lab.append(input); row.append(lab);
       }
       q('vertices').append(row);
@@ -118,9 +130,15 @@ export function openPlanImport({ onApply, onClose = () => {} }) {
   q('calibrate').onclick = () => { mode = 'calibrate'; clearScale(); q('hint').textContent = 'Нажмите на начало и конец отрезка с известной длиной.'; invalidate(); };
   const position = e => { const r = canvas.getBoundingClientRect(); return { x: Math.max(0, Math.min(canvas.width, (e.clientX - r.left) * canvas.width / r.width)), y: Math.max(0, Math.min(canvas.height, (e.clientY - r.top) * canvas.height / r.height)) }; };
   canvas.onpointerdown = e => {
-    if (busy) return;
+    if (busy || (e.button !== undefined && e.button !== 0)) return;
     const p = position(e);
-    if (mode === 'calibrate') { if (!calibration.a) calibration.a = p; else { calibration.b = p; mode = 'edit'; } invalidate(); }
+    if (mode === 'calibrate') {
+      const radius = 16 * canvas.width / canvas.getBoundingClientRect().width;
+      const nearest = points.reduce((best, v) => distance(v, p) < distance(best, p) ? v : best, points[0] ?? p);
+      const mark = points.length && distance(nearest, p) <= radius ? { ...nearest } : p;
+      if (!calibration.a) calibration.a = mark; else { calibration.b = mark; mode = 'edit'; }
+      invalidate();
+    }
     else if (mode === 'draw') { if (points.length >= 64) return; points.push(p); vertexInputs(); invalidate(); }
     else {
       const radius = 24 * canvas.width / canvas.getBoundingClientRect().width;
@@ -138,7 +156,8 @@ export function openPlanImport({ onApply, onClose = () => {} }) {
     closed = points.length >= 3; mode = 'edit'; clearScale(); vertexInputs(); invalidate();
   };
   q('file').onchange = async () => {
-    const id = ++loadId, file = q('file').files[0]; stop(); image = null; points = []; words = []; candidates = []; closed = false; clearScale();
+    const id = ++loadId, file = q('file').files[0]; stop(); releaseImage(); points = []; words = []; candidates = []; closed = false; mode = 'edit'; dragging = -1; clearScale(); vertexInputs();
+    q('hint').textContent = 'Выберите найденный контур или обведите комнату.';
     q('review').hidden = true; q('candidate').replaceChildren(el('option', 'Контур не выбран')); q('candidate').firstChild.value = ''; q('words').replaceChildren(); stop(); invalidate();
     if (!file) return;
     let bitmap;
@@ -160,20 +179,20 @@ export function openPlanImport({ onApply, onClose = () => {} }) {
   };
   function start(kind) {
     if (!image || busy) return;
-    busy = true; q('confirmed').checked = false; q('apply').disabled = true;
+    busy = true; q('confirmed').checked = false; q('confirmed').disabled = true; q('apply').disabled = true;
     q('detect').disabled = q('ocr').disabled = true; q('stop').hidden = false; q('progress').hidden = false; q('progress').removeAttribute('value');
     status(kind === 'ocr' ? 'OCR: загрузка модулей и чтение текста. На слабом телефоне это может занять минуту.' : 'Поиск замкнутых светлых областей…');
     let current;
     try { current = new Worker(new URL(`plan-import/${kind}.worker.js`, document.baseURI), kind === 'detect' ? { type: 'module' } : {}); }
     catch { stop('Браузер не поддерживает распознавание. Обведите комнату вручную.'); update(); return; }
-    worker = current;
+    worker = current; workerKind = kind;
     timer = setTimeout(() => stop('Время распознавания истекло. Обведите комнату и введите размер вручную.'), kind === 'ocr' ? 90000 : 15000);
     current.onerror = () => { if (worker === current) { stop('Распознавание недоступно. Обведите комнату и задайте масштаб вручную.'); update(); } };
     current.onmessage = ({ data }) => {
       if (worker !== current || disposed) return;
       if ('progress' in data) { q('progress').value = data.progress; return; }
       if (data.error) { stop('Не удалось распознать. Обведите комнату и задайте масштаб вручную.'); update(); return; }
-      stop();
+      stop(null, { finished: true });
       if (kind === 'detect') {
         candidates = data.candidates;
         points = []; closed = false; mode = 'edit'; clearScale(); vertexInputs();
@@ -193,10 +212,12 @@ export function openPlanImport({ onApply, onClose = () => {} }) {
       }
       update();
     };
-    if (kind === 'detect') {
-      const pixels = image.getContext('2d').getImageData(0, 0, image.width, image.height);
-      current.postMessage({ buffer: pixels.data.buffer, width: image.width, height: image.height }, [pixels.data.buffer]);
-    } else current.postMessage({ image: image.toDataURL('image/png') });
+    try {
+      if (kind === 'detect') {
+        const pixels = image.getContext('2d').getImageData(0, 0, image.width, image.height);
+        current.postMessage({ buffer: pixels.data.buffer, width: image.width, height: image.height }, [pixels.data.buffer]);
+      } else current.postMessage({ image: image.toDataURL('image/png') });
+    } catch { stop('Не удалось прочитать изображение. Попробуйте другой файл.'); update(); }
   }
   q('detect').onclick = () => start('detect'); q('ocr').onclick = () => start('ocr');
   q('apply').onclick = () => {

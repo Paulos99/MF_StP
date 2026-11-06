@@ -8163,3 +8163,5 @@ body.theme-dark .results-drawer-backdrop {
 .plan-import footer { margin-top: 16px; }
 .plan-import [hidden] { display: none !important; }
 @media (max-width: 480px) { .plan-import { padding: 12px; } .plan-import__actions button { flex: 1 1 45%; } }
+
+.sketch-float-zoom .sketch-plan-import-trigger { width: auto; padding: 0 10px; white-space: nowrap; flex-shrink: 0; font-size: 12px; }

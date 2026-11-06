@@ -71,9 +71,9 @@ function setup() {
   class FakeWorker {
     static all = [];
     constructor(url) { this.url = url; FakeWorker.all.push(this); }
-    postMessage() {}
+    postMessage(message) { this.messages ??= []; this.messages.push(message); if (message.cancel) this.respond({ cancelled: true }); }
     terminate() { this.terminated = true; }
-    respond(data) { this.onmessage({ data }); }
+    respond(data) { this.onmessage?.({ data }); }
   }
   globalThis.Worker = FakeWorker;
   const room = { geometry: 'old', openings: ['window'], height: 2.7, material: 'old' };
@@ -85,7 +85,7 @@ function setup() {
 }
 async function upload(s) {
   const png = readFileSync(new URL('fixtures/plan-import/rectangle.png', import.meta.url));
-  Object.defineProperty(s.q('file'), 'files', { value: [{ type: 'image/png', size: png.length, slice: () => ({ arrayBuffer: async () => png.buffer.slice(png.byteOffset, png.byteOffset + png.byteLength) }) }] });
+  Object.defineProperty(s.q('file'), 'files', { configurable: true, value: [{ type: 'image/png', size: png.length, slice: () => ({ arrayBuffer: async () => png.buffer.slice(png.byteOffset, png.byteOffset + png.byteLength) }) }] });
   await s.q('file').onchange();
 }
 function click(q, id) { q(id).onclick(); }
@@ -150,4 +150,112 @@ test('OCR text cannot choose a contour or units that were not recognized', async
   s.q('words').querySelector('button').onclick();
   assert.equal(s.q('length').value, '3500'); assert.equal(s.q('unit').value, '');
   assert.equal(s.q('apply').disabled, true); assert.equal(s.applied(), 0); s.handle.close();
+});
+
+test('invalid or blank vertex input cannot leave stale reviewed geometry enabled', async () => {
+  const s = setup(); await upload(s); click(s.q, 'detect');
+  s.FakeWorker.all[0].respond({ candidates: [{ points: square }] });
+  s.q('candidate').value = '0'; s.q('candidate').onchange(); calibrate(s);
+  s.q('confirmed').checked = true; s.q('confirmed').onchange();
+  const input = s.q('vertices').querySelector('input');
+  for (const value of ['', '-1', '999999']) {
+    input.value = value; input.oninput();
+    assert.equal(s.q('confirmed').checked, false);
+    s.q('confirmed').checked = true; s.q('confirmed').onchange();
+    assert.equal(s.q('apply').disabled, true);
+  }
+  input.value = '0'; input.oninput();
+  s.q('confirmed').checked = true; s.q('confirmed').onchange();
+  assert.equal(s.q('apply').disabled, false); s.handle.close();
+});
+test('replacement image resets pending calibration mode and keeps draft isolated', async () => {
+  const s = setup(); await upload(s); click(s.q, 'calibrate');
+  s.q('canvas').onpointerdown({ clientX: 40, clientY: 40 });
+  await upload(s);
+  s.q('canvas').onpointerdown({ clientX: 100, clientY: 100 });
+  assert.match(s.q('segment').textContent, /Отметьте две точки/);
+  assert.equal(s.applied(), 0); s.handle.close();
+});
+test('close during decode ignores stale bitmap and releases it', async () => {
+  const s = setup(); let resolveBitmap, released = false;
+  globalThis.createImageBitmap = () => new Promise(resolve => { resolveBitmap = resolve; });
+  const pending = upload(s);
+  while (!resolveBitmap) await new Promise(resolve => setImmediate(resolve));
+  s.handle.close();
+  resolveBitmap({ width: 500, height: 400, close() { released = true; } });
+  await pending;
+  assert.equal(released, true); assert.equal(s.applied(), 0); assert.equal(document.querySelector('dialog'), null);
+});
+
+import { retireWorker } from '../src/plan-import/retire-worker.js';
+test('OCR retirement waits for explicit child-cleanup ACK and ignores stale results', () => {
+  const messages = [];
+  const worker = { terminated: 0, postMessage: m => messages.push(m), terminate() { this.terminated++; } };
+  retireWorker(worker, { cooperative: true });
+  assert.deepEqual(messages, [{ cancel: true }]); assert.equal(worker.terminated, 0);
+  worker.onmessage({ data: { words: [] } }); assert.equal(worker.terminated, 0);
+  worker.onmessage({ data: { cancelled: true } }); assert.equal(worker.terminated, 1);
+});
+test('failed/unresponsive OCR host is hard-terminated within bounded fallback', async () => {
+  const worker = { terminated: false, postMessage() {}, terminate() { this.terminated = true; } };
+  retireWorker(worker, { cooperative: true });
+  await new Promise(resolve => setTimeout(resolve, 550)); assert.equal(worker.terminated, true);
+});
+
+import vm from 'node:vm';
+function ocrHost(createWorker) {
+  const events = [], childWorkers = [];
+  class Child {
+    constructor(path) { this.path = path; childWorkers.push(this); }
+    terminate() { this.dead = true; events.push('child-terminated'); }
+  }
+  const self = { Worker: Child, location: { href: 'https://example.test/MF_StP/plan-import/ocr.worker.js' }, postMessage: data => events.push(data) };
+  const context = { self, URL, importScripts: path => events.push({ script: path }), Tesseract: { createWorker: (...args) => createWorker(self, events, ...args) } };
+  vm.runInNewContext(readFileSync(new URL('../src/plan-import/ocr.worker.js', import.meta.url), 'utf8'), context);
+  return { self, events, childWorkers };
+}
+test('OCR host explicitly kills child even while createWorker initialization is pending', async () => {
+  const host = ocrHost((self, events, langs, oem, options) => {
+    new self.Worker(options.workerPath);
+    assert.equal(options.corePath, 'https://example.test/MF_StP/ocr/core/');
+    assert.equal(options.langPath, 'https://example.test/MF_StP/ocr/lang');
+    assert.equal(options.cacheMethod, 'none');
+    return new Promise(() => {});
+  });
+  host.self.onmessage({ data: { image: 'local-data' } });
+  await host.self.onmessage({ data: { cancel: true } });
+  assert.equal(host.childWorkers[0].dead, true);
+  assert.ok(host.events.findIndex(e => e === 'child-terminated') < host.events.findIndex(e => e.cancelled));
+});
+test('OCR host releases child BEFORE returning text; retains adjacent units in a line', async () => {
+  const host = ocrHost(async (self, events, langs, oem, options) => {
+    const child = new self.Worker(options.workerPath);
+    return {
+      recognize: async () => ({ data: { confidence: 90, blocks: [{ paragraphs: [{ lines: [{ text: '4000 mm', confidence: 90, bbox: {x0:0,y0:0,x1:100,y1:30} }] }] }] } }),
+      terminate: async () => child.terminate(),
+    };
+  });
+  await host.self.onmessage({ data: { image: 'local-data' } });
+  assert.equal(host.childWorkers[0].dead, true);
+  const index = host.events.findIndex(e => e.words);
+  assert.ok(index > host.events.indexOf('child-terminated'));
+  assert.equal(host.events[index].words[0].text, '4000 mm');
+});
+test('OCR host failure during initialization releases already-spawned child', async () => {
+  const host = ocrHost(async self => { new self.Worker('local'); throw new Error('synthetic init failure'); });
+  await host.self.onmessage({ data: { image: 'local-data' } });
+  assert.equal(host.childWorkers[0].dead, true);
+  const index = host.events.findIndex(e => e.error);
+  assert.ok(index > host.events.indexOf('child-terminated'));
+});
+test('calibration taps near selected corners snap without assuming a real length', async () => {
+  const s = setup(); await upload(s); click(s.q, 'detect');
+  s.FakeWorker.all[0].respond({ candidates: [{ points: square }] });
+  s.q('candidate').value = '0'; s.q('candidate').onchange(); click(s.q, 'calibrate');
+  s.q('canvas').onpointerdown({ clientX: 5, clientY: 5 });
+  s.q('canvas').onpointerdown({ clientX: 395, clientY: 5 });
+  assert.equal(s.q('apply').disabled, true);
+  s.q('length').value = '4000'; s.q('unit').value = 'mm'; s.q('unit').onchange();
+  s.q('confirmed').checked = true; s.q('confirmed').onchange(); click(s.q, 'apply');
+  assert.equal(s.applied(), 1); assert.equal(s.room.geometry.edgeDimensions[0], 4); assert.equal(s.room.geometry.edgeDimensions[1], 3);
 });
