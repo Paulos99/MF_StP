@@ -1,0 +1,36 @@
+Plan import third-party notices
+
+Tesseract.js 7.0.0 and tesseract.js-core 7.0.0: Apache License 2.0.
+https://github.com/naptha/tesseract.js
+https://github.com/naptha/tesseract.js-core
+Full license texts are copied next to this notice during prepare:ocr.
+No upstream runtime files are modified.
+
+@tesseract.js-data/eng 1.0.0 and @tesseract.js-data/rus 1.0.0:
+package metadata declares MIT; package author: jeromewu.
+https://github.com/naptha/tessdata
+The traineddata models originate from Tesseract tessdata (Apache License 2.0):
+https://github.com/tesseract-ocr/tessdata/blob/main/LICENSE
+Use the integer LSTM models in each package's 4.0.0_best_int directory.
+Apache License 2.0 text is included as tesseract-core-Apache-2.0.txt.
+
+MIT License
+Copyright (c) the respective package authors and contributors.
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+linkedom 0.18.12 (MIT) is a dev-only DOM test dependency, not a runtime asset.
+Contour detection/calibration are original code; no OpenCV or LLM is used.
