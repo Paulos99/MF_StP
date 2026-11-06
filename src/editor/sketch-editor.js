@@ -326,6 +326,9 @@ export class SketchEditor {
 
     this._q('#sketchPlanImportBtn')?.addEventListener('click', () => this._openPlanImport());
 
+    this._q('#sketchBgUploadBtn')?.addEventListener('click', () => {
+      this.bgUploadInput?.click();
+    });
     this.edgeEditSizeBtn?.addEventListener('click', (e) => {
       e.stopPropagation();
       this._showKeypadForSelectedEdge();
@@ -1138,6 +1141,7 @@ export class SketchEditor {
       'sketchRedoBtn',
       'sketchClearBtn',
       'sketchTemplatesBtn',
+      'sketchBgUploadBtn',
       'sketchPlanImportBtn',
       'sketchHelpBtn',
     ].forEach((id) => {
@@ -2800,13 +2804,10 @@ export class SketchEditor {
         onApply: geometry => {
           if (this.room === room && !this.geometryLocked) this._applyImportedPlan(geometry);
         },
-        onUseBackground: image => {
-          if (this.room === room && !this.geometryLocked) this._setBackgroundImage(image);
-        },
         onClose: () => { this._planImport = null; },
       });
     } catch {
-      this.showToast('Не удалось открыть фото плана. Обновите страницу и попробуйте ещё раз.');
+      this.showToast('Не удалось открыть план по фото. Можно добавить фото как подложку.');
     } finally { this._planImportLoading = false; }
   }
 
@@ -2839,43 +2840,38 @@ export class SketchEditor {
       this.showToast('Выберите файл изображения');
       return;
     }
+    if (this._bgObjectUrl) URL.revokeObjectURL(this._bgObjectUrl);
     const url = URL.createObjectURL(file);
     const img = new Image();
     img.onload = () => {
-      this._setBackgroundImage(img, url);
+      this.bgImage = img;
+      this._bgObjectUrl = url;
+      const { w, h } = this._getCanvasSize();
+      const center = this.canvasToWorld(w / 2, h / 2);
+      const viewWidthM = w / (PX_PER_M * this.zoom);
+      this._bgBaseWidthM = viewWidthM * 0.75;
+      this.bgTransform = {
+        cx: center.x,
+        cy: center.y,
+        widthM: this._bgBaseWidthM,
+        opacity: 0.45,
+      };
+      this._cancelBgCalibration(false);
+      this._bgScaleLocked = false;
+      this.bgAdjustMode = true;
+      if (this.bgOpacityInput) this.bgOpacityInput.value = '45';
+      if (this.bgScaleInput) this.bgScaleInput.value = '100';
+      this._syncBgWidthInput();
+      this._updateBgUi();
+      this._updateUi();
+      this.render();
+      this._startBgCalibration();
     };
     img.onerror = () => {
       URL.revokeObjectURL(url);
       this.showToast('Не удалось загрузить изображение');
     };
     img.src = url;
-  }
-
-  _setBackgroundImage(img, url = null) {
-    // Shared by the original image loader and the reviewed photo-plan flow.
-    this._removeBackgroundImage(false);
-    this.bgImage = img;
-    this._bgObjectUrl = url;
-    const { w, h } = this._getCanvasSize();
-    const center = this.canvasToWorld(w / 2, h / 2);
-    const viewWidthM = w / (PX_PER_M * this.zoom);
-    this._bgBaseWidthM = viewWidthM * 0.75;
-    this.bgTransform = {
-      cx: center.x,
-      cy: center.y,
-      widthM: this._bgBaseWidthM,
-      opacity: 0.45,
-    };
-    this._cancelBgCalibration(false);
-    this._bgScaleLocked = false;
-    this.bgAdjustMode = true;
-    if (this.bgOpacityInput) this.bgOpacityInput.value = '45';
-    if (this.bgScaleInput) this.bgScaleInput.value = '100';
-    this._syncBgWidthInput();
-    this._updateBgUi();
-    this._updateUi();
-    this.render();
-    this._startBgCalibration();
   }
 
   _removeBackgroundImage(updateUi = true) {

@@ -16,8 +16,7 @@
     "prebuild:esbuild": "npm run prepare:ocr",
     "test:plan": "node --test scripts/plan-import.test.mjs",
     "test:ocr": "npm run prepare:ocr && node scripts/assert-plan-ocr.mjs",
-    "test:app-state": "node --test scripts/app-state.test.mjs",
-    "test:built": "node --experimental-vm-modules scripts/assert-built.mjs"
+    "test:app-state": "node --test scripts/app-state.test.mjs"
   },
   "dependencies": {
     "@tesseract.js-data/eng": "1.0.0",

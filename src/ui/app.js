@@ -1049,7 +1049,7 @@ function setupModeToggles() {
   $('changeModeBtn')?.addEventListener('click', () => setInputMode(null));
 
   $('drawUploadPhotoBtn')?.addEventListener('click', () => {
-    sketchEditor?._openPlanImport();
+    $('sketchBgUploadBtn')?.click();
   });
   $('drawClearBtn')?.addEventListener('click', () => {
     sketchEditor?.clear?.();

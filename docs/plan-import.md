@@ -1,11 +1,7 @@
 # Browser plan import (MVP)
 
-Open **Фото плана** in the sketch toolbar or drawing sidebar (both open the same
-flow). The adjacent second image button has been removed. After upload, choose
-**Обводить в редакторе** to install a bounded background image and use the existing
-manual calibration/opacity/move/tracing tools, or find/edit contours in the draft.
-Installing a background preserves current geometry/openings/settings and requires
-its own explicit button; Cancel never installs it. Help is optional, inside
+Open **План по фото** in the sketch toolbar (draw mode). The old photo-background
+and calibration flow is still available beside it. Help is optional, inside
 **Как работает?**. Nothing starts automatically on page load or upload.
 
 1. Upload a PNG/JPEG/WebP. Header checks reject files over 12 MiB, 16 megapixels,
@@ -91,7 +87,7 @@ See `plan-import-licenses.txt`; full runtime license/notices are copied to
 
 ```
 npm ci
-npm test                # existing layout invariants + 29 deterministic import checks
+npm test                # existing layout invariants + 26 deterministic import checks
 npm run test:ocr        # real Tesseract Node smoke test, self-hosted model files
 npm run build
 npm run build:esbuild
@@ -140,32 +136,7 @@ paths invalidate pending requests too. The previous committed result stays intac
 while a new valid calculation runs. Import cancellation still does not mutate room
 or calculation state. No packing algorithm or PDF renderer was changed.
 
-`npm run test:app-state` runs ten DOM/VM regression checks against actual app
+`npm run test:app-state` runs nine DOM/VM regression checks against actual app
 functions, including delayed/out-of-order calculations and a desktop/mobile round
 trip. Seven of those fail against the pre-fix app source. Together with the existing
 26 plan-import checks, these are not a replacement for a final browser replay.
-
-
-## Published-build control/loading regression
-
-The production entry, lazy dialog, helper and OCR host were fetched over HTTP from
-GitHub Pages; the checked module URLs returned 200 with JavaScript MIME types.
-There was no evidence of a missing lazy chunk or an incorrect `/MF_StP/` import URL.
-A definite non-clickable path was found in dimensions-only mode: `_syncLockedToolbar`
-sets drawing controls to `disabled` and `hidden`, but `.sketch-tool-btn { display:flex }`
-overrode the browser's `[hidden]` display rule. The result was a visible disabled
-photo button. A specific `display:none !important` rule now enforces hidden tools.
-Use **Нарисовать схему** for photo geometry; dimensions-only mode stays locked.
-
-The existing Pages `assets/app.js`/`app.css` names and CI/workflow contract are
-unchanged. Cached old HTML/JS remains a possible deployment concern, not a confirmed
-cause of the reported click. Optional content hashing was excluded from this narrow
-controls fix; no workflow scope or new credential is needed for its file changes.
-
-After either build, run `npm run test:built`. It serves the actual dist at a
-`/MF_StP/` HTTP subpath, evaluates the photo ESM graph, opens/cancels the compiled
-photo dialog, checks self-hosted runtime assets, unified controls and hidden-tool CSS.
-On the actual Pages/esbuild artifact it also binds and clicks the compiled editor
-handler in locked/unlocked modes. Vite's minified entry is not instrumented; its
-photo ESM graph/dialog/asset checks still run. No headless browser is driven here;
-real 412×915/desktop interaction and canvas rendering still need parent desktop QA.
