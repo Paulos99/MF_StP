@@ -57,7 +57,7 @@ test('self intersections, zero edges, collinear overlaps, nonfinite and empty re
 // DOM-level flow checks, deliberately NOT a browser/desktop substitute.
 import { parseHTML } from 'linkedom';
 import { openPlanImport } from '../src/plan-import/dialog.js';
-function setup() {
+function setup({ onUseBackground } = {}) {
   const { document, window } = parseHTML('<html><head><base href="https://example.test/MF_StP/"></head><body></body></html>');
   globalThis.document = document;
   window.HTMLElement.prototype.showModal = function () {};
@@ -78,7 +78,7 @@ function setup() {
   globalThis.Worker = FakeWorker;
   const room = { geometry: 'old', openings: ['window'], height: 2.7, material: 'old' };
   let applied = 0;
-  const handle = openPlanImport({ onApply: geometry => { applied++; room.geometry = geometry; room.openings = []; } });
+  const handle = openPlanImport({ onUseBackground, onApply: geometry => { applied++; room.geometry = geometry; room.openings = []; } });
   const dialog = document.querySelector('dialog');
   const q = id => dialog.querySelector(`[data-id="${id}"]`);
   return { room, q, handle, FakeWorker, applied: () => applied };
@@ -261,4 +261,35 @@ test('calibration taps near selected corners snap without assuming a real length
   s.q('length').value = '4000'; s.q('unit').value = 'mm'; s.q('unit').onchange();
   s.q('confirmed').checked = true; s.q('confirmed').onchange(); click(s.q, 'apply');
   assert.equal(s.applied(), 1); assert.equal(s.room.geometry.edgeDimensions[0], 4); assert.equal(s.room.geometry.edgeDimensions[1], 3);
+});
+test('manual background choice shares the uploaded image without mutating room or applying geometry', async () => {
+  let background;
+  const s = setup({ onUseBackground: image => { background = image; } });
+  const before = structuredClone(s.room);
+  await upload(s); assert.equal(background, undefined);
+  assert.equal(s.q('background-choice').hidden, false);
+  click(s.q, 'background');
+  assert.equal(background.width, 500); assert.equal(background.height, 400);
+  assert.equal(s.applied(), 0); assert.deepEqual(s.room, before);
+  assert.equal(document.querySelector('dialog'), null);
+});
+test('cancel never installs a background even after successful upload', async () => {
+  let changes = 0;
+  const s = setup({ onUseBackground: () => changes++ });
+  await upload(s); s.handle.close(); assert.equal(changes, 0);
+});
+test('shared editor background setup retains geometry/openings/settings and starts manual calibration only', () => {
+  const room = new Room({ wallHeight: 3.1 });
+  room.openings = [{ id: 'window' }];
+  const before = JSON.stringify(room);
+  const editor = Object.create(SketchEditor.prototype);
+  let calibrated = 0;
+  Object.assign(editor, { room, vertices: room.vertices, zoom: 1, _getCanvasSize: () => ({ w: 500, h: 400 }),
+    canvasToWorld: () => ({x: 5, y: 4}), _syncBgWidthInput() {}, _updateBgUi() {}, _updateUi() {}, render() {},
+    _startBgCalibration() { calibrated++; }, onRoomChange: assert.fail, onGeometryEdit: assert.fail });
+  const image = { width: 500, height: 400 };
+  editor._setBackgroundImage(image);
+  assert.equal(JSON.stringify(room), before);
+  assert.equal(editor.bgImage, image); assert.equal(editor.bgAdjustMode, true);
+  assert.equal(editor._bgScaleLocked, false); assert.equal(calibrated, 1);
 });

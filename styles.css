@@ -8165,3 +8165,7 @@ body.theme-dark .results-drawer-backdrop {
 @media (max-width: 480px) { .plan-import { padding: 12px; } .plan-import__actions button { flex: 1 1 45%; } }
 
 .sketch-float-zoom .sketch-plan-import-trigger { width: auto; padding: 0 10px; white-space: nowrap; flex-shrink: 0; font-size: 12px; }
+
+/* Author display:flex otherwise overrides the browser's [hidden] rule, leaving
+   locked drawing tools visibly disabled in the dimensions-only mode. */
+.sketch-tool-btn[hidden] { display: none !important; }

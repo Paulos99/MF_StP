@@ -3,12 +3,12 @@ import { MAX_SIDE, checkFile, imageDimensions, parseDimensions, calibratedGeomet
 
 const el = (tag, text) => { const node = document.createElement(tag); node.textContent = text; return node; };
 /** A detached draft: this module cannot access or mutate the calculator's room. */
-export function openPlanImport({ onApply, onClose = () => {} }) {
+export function openPlanImport({ onApply, onUseBackground, onClose = () => {} }) {
   const dialog = document.createElement('dialog');
   dialog.className = 'plan-import';
-  dialog.setAttribute('aria-label', 'План по фото');
+  dialog.setAttribute('aria-label', 'Фото плана');
   dialog.innerHTML = `
-    <header><h2>План по фото</h2><button type="button" data-id="close" aria-label="Закрыть">×</button></header>
+    <header><h2>Фото плана</h2><button type="button" data-id="close" aria-label="Закрыть">×</button></header>
     <p>Проверьте контур и масштаб. Распознавание может ошибаться. До «Применить» комната не изменится.</p>
     <details><summary>Как работает?</summary><p>Загрузите план, найдите контуры и выберите одну комнату. Если контур не найден, обведите его по углам. Перетащите углы для правки. Отметьте две точки известного отрезка и введите его длину. Проверьте каждую стену перед применением. Фото под углом сначала выровняйте. Внутренние колонны и отверстия не учитываются.</p></details>
     <p class="plan-import__privacy">Всё считается в браузере. Файл никуда не отправляется. OCR загружает бесплатные модули с этого сайта только по кнопке.</p>
@@ -16,6 +16,10 @@ export function openPlanImport({ onApply, onClose = () => {} }) {
     <div class="plan-import__actions"><button type="button" data-id="detect" disabled>Найти контуры</button><button type="button" data-id="ocr" disabled>Прочитать размеры (OCR)</button><button type="button" data-id="stop" hidden>Остановить</button></div>
     <p data-id="status" role="status" aria-live="polite">Выберите изображение. PDF пока не поддерживается.</p><progress data-id="progress" max="1" hidden></progress>
     <section data-id="review" hidden>
+      <div data-id="background-choice" hidden>
+        <button type="button" data-id="background">Обводить в редакторе</button>
+        <p>Фото станет подложкой для ручной обводки. Текущий контур, окна и двери сохранятся. Прежняя подложка заменится только по этой кнопке.</p>
+      </div>
       <label>Выберите комнату<select data-id="candidate"><option value="">Контур не выбран</option></select></label>
       <div class="plan-import__actions"><button type="button" data-id="draw">Обвести заново</button><button type="button" data-id="undo">Убрать последний угол</button><button type="button" data-id="finish">Замкнуть контур</button><button type="button" data-id="calibrate">Задать масштаб по двум точкам</button></div>
       <p data-id="hint">Выберите найденный контур или обведите комнату.</p>
@@ -32,6 +36,7 @@ export function openPlanImport({ onApply, onClose = () => {} }) {
   document.body.append(dialog);
   const q = id => dialog.querySelector(`[data-id="${id}"]`);
   const canvas = q('canvas'), ctx = canvas.getContext('2d');
+  q('background-choice').hidden = !onUseBackground;
   let image = null, points = [], candidates = [], words = [], calibration = {}, mode = 'edit', closed = false;
   let worker = null, workerKind = null, timer = null, loadId = 0, disposed = false, busy = false, dragging = -1, result = null;
   const status = text => { q('status').textContent = text; };
@@ -41,6 +46,7 @@ export function openPlanImport({ onApply, onClose = () => {} }) {
     retireWorker(previous, { cooperative: kind === 'ocr', finished });
     clearTimeout(timer); busy = false;
     q('confirmed').disabled = false;
+    q('background').disabled = !image;
     q('progress').hidden = true; q('stop').hidden = true;
     for (const id of ['detect', 'ocr']) q(id).disabled = !image;
     if (message) status(message);
@@ -180,7 +186,7 @@ export function openPlanImport({ onApply, onClose = () => {} }) {
   function start(kind) {
     if (!image || busy) return;
     busy = true; q('confirmed').checked = false; q('confirmed').disabled = true; q('apply').disabled = true;
-    q('detect').disabled = q('ocr').disabled = true; q('stop').hidden = false; q('progress').hidden = false; q('progress').removeAttribute('value');
+    q('detect').disabled = q('ocr').disabled = q('background').disabled = true; q('stop').hidden = false; q('progress').hidden = false; q('progress').removeAttribute('value');
     status(kind === 'ocr' ? 'OCR: загрузка модулей и чтение текста. На слабом телефоне это может занять минуту.' : 'Поиск замкнутых светлых областей…');
     let current;
     try { current = new Worker(new URL(`plan-import/${kind}.worker.js`, document.baseURI), kind === 'detect' ? { type: 'module' } : {}); }
@@ -220,6 +226,14 @@ export function openPlanImport({ onApply, onClose = () => {} }) {
     } catch { stop('Не удалось прочитать изображение. Попробуйте другой файл.'); update(); }
   }
   q('detect').onclick = () => start('detect'); q('ocr').onclick = () => start('ocr');
+  q('background').onclick = () => {
+    if (disposed || !image || busy || !onUseBackground) return;
+    // Independent bounded canvas: cleanup must not erase the editor's new image.
+    const copy = document.createElement('canvas'); copy.width = image.width; copy.height = image.height;
+    copy.getContext('2d').drawImage(image, 0, 0);
+    onUseBackground(copy);
+    cleanup();
+  };
   q('apply').onclick = () => {
     if (disposed) return;
     update();
