@@ -324,6 +324,8 @@ export class SketchEditor {
       });
     });
 
+    this._q('#sketchPlanImportBtn')?.addEventListener('click', () => this._openPlanImport());
+
     this._q('#sketchBgUploadBtn')?.addEventListener('click', () => {
       this.bgUploadInput?.click();
     });
@@ -452,6 +454,7 @@ export class SketchEditor {
   }
 
   activate({ room, startTutorial = false } = {}) {
+    this._planImport?.close();
     this.room = room ?? null;
     this._active = true;
     const hasShape = (room?.vertices?.length ?? 0) >= 3;
@@ -608,6 +611,7 @@ export class SketchEditor {
   }
 
   close(save) {
+    this._planImport?.close();
     if (this.inline) {
       if (save && this._canSave()) this._emitApply();
       return;
@@ -1138,6 +1142,7 @@ export class SketchEditor {
       'sketchClearBtn',
       'sketchTemplatesBtn',
       'sketchBgUploadBtn',
+      'sketchPlanImportBtn',
       'sketchHelpBtn',
     ].forEach((id) => {
       const el = this._q(`#${id}`);
@@ -2785,6 +2790,49 @@ export class SketchEditor {
     this._updateBgUi();
     this._positionEdgeActions();
     this._updateSnapLegend();
+  }
+
+  async _openPlanImport() {
+    if (this.geometryLocked || this._planImport || this._planImportLoading) return;
+    this._planImportLoading = true;
+    const room = this.room;
+    try {
+      const { openPlanImport } = await import('../plan-import/dialog.js');
+      if (this.room !== room || this.geometryLocked || !this._active) return;
+      this.onboarding?.dismiss();
+      this._planImport = openPlanImport({
+        onApply: geometry => {
+          if (this.room === room && !this.geometryLocked) this._applyImportedPlan(geometry);
+        },
+        onClose: () => { this._planImport = null; },
+      });
+    } catch {
+      this.showToast('Не удалось открыть план по фото. Можно добавить фото как подложку.');
+    } finally { this._planImportLoading = false; }
+  }
+
+  _applyImportedPlan({ vertices, edgeDimensions }) {
+    // Only called by the reviewed draft's explicit Apply action. No work per drag.
+    this.history = [];
+    this.future = [];
+    this._removeBackgroundImage(false);
+    if (this.room) this.room.openings = [];
+    this.vertices = vertices.map((v, i) => ({ x: v.x, y: v.y, label: labelForIndex(i) }));
+    this.edgeDimensions = { ...edgeDimensions };
+    this.diagonalDimensions = {};
+    this.closed = true;
+    this._selectedEdge = null;
+    this._selectedDiagonal = null;
+    this.selectedOpeningId = null;
+    this._previewPoint = null;
+    this.keypad?.hide();
+    this._clearPanelOverlay();
+    this._syncRoomFromShape();
+    this._markGeometryEditing('plan-import');
+    this._scheduleFit(true);
+    this.render();
+    this._updateUi();
+    this._beginPanelSettle();
   }
 
   _loadBackgroundImage(file) {

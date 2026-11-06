@@ -8130,3 +8130,38 @@ body.theme-dark .results-drawer-backdrop {
   }
 }
 
+
+/* Plan import is a separate draft. No calculator work while editing its canvas. */
+.plan-import {
+  box-sizing: border-box; width: min(960px, calc(100vw - 20px)); max-height: calc(100dvh - 20px);
+  overflow: auto; padding: 20px; border: 1px solid #bbc9c5; border-radius: 16px;
+  color: #173d34; background: #fff; font-family: inherit; font-size: 14px;
+}
+.plan-import::backdrop { background: #112a23b3; }
+.plan-import header { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+.plan-import h2 { margin: 0; font-size: 22px; }
+.plan-import p { margin: 12px 0; line-height: 1.5; }
+.plan-import button, .plan-import input, .plan-import select { font: inherit; min-height: 44px; max-width: 100%; box-sizing: border-box; }
+.plan-import button { border: 1px solid #a9c4bb; border-radius: 8px; padding: 8px 12px; color: #004c3d; background: #f0f7f4; cursor: pointer; }
+.plan-import button:disabled { opacity: .45; cursor: default; }
+.plan-import button:focus-visible, .plan-import input:focus-visible, .plan-import select:focus-visible { outline: 3px solid #308bd5; outline-offset: 2px; }
+.plan-import label { display: block; margin: 8px 0; }
+.plan-import input:not([type=checkbox]), .plan-import select { display: block; width: 100%; border: 1px solid #9bb7ad; padding: 8px; border-radius: 6px; background: white; color: #173d34; }
+.plan-import__actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0; }
+.plan-import canvas { display: block; width: 100%; height: auto; touch-action: none; border: 1px solid #a9c4bb; }
+.plan-import__privacy { color: #4c635b; }
+.plan-import__vertex { display: flex; align-items: center; gap: 8px; }
+.plan-import__vertex label { flex: 1; min-width: 0; }
+.plan-import details { padding: 8px 0; }
+.plan-import summary { cursor: pointer; min-height: 32px; }
+.plan-import fieldset { margin: 12px 0; border: 1px solid #a9c4bb; min-width: 0; }
+.plan-import__check { display: flex !important; align-items: center; gap: 10px; }
+.plan-import__check input { flex-shrink: 0; width: 22px; height: 22px; }
+.plan-import [data-id=words] { display: flex; gap: 6px; flex-wrap: wrap; }
+.plan-import [data-id=apply] { background: #00644f; color: white; width: 100%; }
+.plan-import progress { width: 100%; }
+.plan-import footer { margin-top: 16px; }
+.plan-import [hidden] { display: none !important; }
+@media (max-width: 480px) { .plan-import { padding: 12px; } .plan-import__actions button { flex: 1 1 45%; } }
+
+.sketch-float-zoom .sketch-plan-import-trigger { width: auto; padding: 0 10px; white-space: nowrap; flex-shrink: 0; font-size: 12px; }

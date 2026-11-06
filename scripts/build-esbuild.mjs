@@ -56,6 +56,7 @@ if (isStand) {
 writeFileSync('dist/index.html', html);
 
 copyFileSync('styles.css', 'dist/assets/app.css');
+cpSync('public', 'dist', { recursive: true });
 
 // Шрифт Manrope (url в styles.css относительный: ./fonts/ рядом с app.css)
 cpSync('fonts', 'dist/assets/fonts', { recursive: true });
