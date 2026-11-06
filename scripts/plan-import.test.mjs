@@ -132,6 +132,9 @@ test('actual editor apply uses existing Room pipeline once and preserves height/
     _scheduleFit() {}, render() {}, _updateUi() {}, _beginPanelSettle() { settle++; } });
   const result = calibratedGeometry(square, { a: square[0], b: square[1], length: 4, unit: 'm' });
   editor._applyImportedPlan(result);
+  assert.deepEqual(editor.vertices.map(v => v.label), ['A', 'B', 'C', 'D']);
+  assert.deepEqual(room.vertices.map(v => v.label), ['A', 'B', 'C', 'D']);
+  assert.equal(room.walls.map(w => w.label).join(','), 'Стена AB,Стена BC,Стена CD,Стена DA');
   assert.equal(room.getTotalArea(), 12); assert.equal(room.wallHeight, 3.2); assert.equal(room.material, 'unchanged');
   assert.deepEqual(room.openings, []); assert.equal(changes, 1); assert.equal(settle, 1); assert.deepEqual(editor.history, []);
 });

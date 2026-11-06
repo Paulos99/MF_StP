@@ -9,13 +9,14 @@
     "build:esbuild": "node scripts/build-esbuild.mjs",
     "preview": "vite preview",
     "test:layout": "node scripts/assert-ceiling-layout.mjs",
-    "test": "npm run test:layout && npm run test:plan",
+    "test": "npm run test:layout && npm run test:plan && npm run test:app-state",
     "prepare:ocr": "node scripts/prepare-ocr.mjs",
     "predev": "npm run prepare:ocr",
     "prebuild": "npm run prepare:ocr",
     "prebuild:esbuild": "npm run prepare:ocr",
     "test:plan": "node --test scripts/plan-import.test.mjs",
-    "test:ocr": "npm run prepare:ocr && node scripts/assert-plan-ocr.mjs"
+    "test:ocr": "npm run prepare:ocr && node scripts/assert-plan-ocr.mjs",
+    "test:app-state": "node --test scripts/app-state.test.mjs"
   },
   "dependencies": {
     "@tesseract.js-data/eng": "1.0.0",

@@ -111,3 +111,32 @@ Before merge, desktop/browser verification is still needed at 412×915 and deskt
 `npm audit` still reports the repository's existing Vite/esbuild development-tool
 advisories (one high, one moderate). No automatic/major tooling upgrade in this PR.
 Do not expose the development server publicly. No deployment or merge is included.
+
+## Result-state regression fixes after browser QA
+
+Imported geometry now receives the sketch's normal A/B/C/... vertex labels before
+it enters `Room`. Draft-only pixel points remain unlabeled by design.
+
+For a 4×3 m room, 2.7 m height, all four walls and ceiling selected, no openings:
+12 m² ceiling + 14 m perimeter × 2.7 m height = **49.80 m² coverage**.
+The unchanged calculators/BOM produce 36 ceiling + 102 wall panels = **138 panels**,
+and 138 × 2396 RUB = **330648 RUB**. These totals are not the ceiling-only area.
+
+The desktop/mobile mismatch was presentation state: the mobile result-unlock gate
+animated aggregates to zero while retaining the BOM/results text, and the breakpoint
+handler did not repaint the aggregates. Aggregate values now always come from the
+committed BOM; mobile unlocking only governs visibility. Breakpoint changes refresh
+the layout. Superseded stat animations are cancelled even on no-op/reduced-motion
+updates, so an older RAF cannot repaint over the newest value.
+
+Calculations now snapshot room/openings/options, invalidate older requests as soon as
+an edit is scheduled (before debounce), and publish room/results/BOM together only
+when the request generation is still current. Clear, invalid-input and quick-area
+paths invalidate pending requests too. The previous committed result stays intact
+while a new valid calculation runs. Import cancellation still does not mutate room
+or calculation state. No packing algorithm or PDF renderer was changed.
+
+`npm run test:app-state` runs nine DOM/VM regression checks against actual app
+functions, including delayed/out-of-order calculations and a desktop/mobile round
+trip. Seven of those fail against the pre-fix app source. Together with the existing
+26 plan-import checks, these are not a replacement for a final browser replay.

@@ -71,8 +71,7 @@ function prefersLowEndCalc() {
   return false;
 }
 
-function buildCeilingLayoutKey(vertices) {
-  const opts = state.options || {};
+function buildCeilingLayoutKey(vertices, opts = state.options || {}) {
   return ceilingLayoutCacheKey(
     vertices,
     `ceil=${!!opts.calcCeiling}|cm=${opts.ceilingMounting || ''}`
@@ -424,6 +423,9 @@ function formatStatCost(n) {
 
 function animateStatValue(el, toValue, formatter, { duration = 520 } = {}) {
   if (!el) return;
+  const key = el.id || 'stat';
+  if (statAnimRafs[key]) cancelAnimationFrame(statAnimRafs[key]);
+  delete statAnimRafs[key];
   const from = parseFloat(el.dataset.raw || '0') || 0;
   const to = Number(toValue) || 0;
   el.dataset.raw = String(to);
@@ -444,8 +446,6 @@ function animateStatValue(el, toValue, formatter, { duration = 520 } = {}) {
     return;
   }
 
-  const key = el.id || 'stat';
-  if (statAnimRafs[key]) cancelAnimationFrame(statAnimRafs[key]);
   const start = performance.now();
   const ease = (t) => 1 - (1 - t) ** 3;
 
@@ -467,7 +467,8 @@ function animateStatValue(el, toValue, formatter, { duration = 520 } = {}) {
 
 function updateStatCards() {
   const bom = state.bom;
-  if (!resultsUnlockedForUi() || !bom?.total) {
+  // Mobile unlock controls visibility, not the committed calculation's values.
+  if (!state.hasResults || !bom?.total) {
     animateStatValue($('totalPanels'), 0, formatStatPanels, { duration: 280 });
     animateStatValue($('coverageArea'), 0, formatStatArea, { duration: 280 });
     animateStatValue($('totalCost'), 0, formatStatCost, { duration: 280 });
@@ -495,6 +496,7 @@ function markResultsStale() {
 
 function scheduleAutoRecalc() {
   if (!state.inputMode) return;
+  calcGeneration += 1; // Invalidate in-flight work now, not after the debounce.
   markStatsRecalculating();
   clearTimeout(autoRecalcTimer);
   autoRecalcTimer = setTimeout(() => {
@@ -596,6 +598,8 @@ function syncChromeUi() {
 }
 
 function clearResultsUi(message = '') {
+  calcGeneration += 1;
+  clearTimeout(autoRecalcTimer);
   state.hasResults = false;
   state.mobileResultsUnlocked = false;
   state.bom = null;
@@ -1247,6 +1251,7 @@ function setupSketchEditor() {
 }
 
 function markPanelPreviewStale() {
+  calcGeneration += 1;
   panelPreviewToken += 1;
   lastCeilingLayoutKey = null;
   document.querySelectorAll('.workspace-stats .stat-card:not(.stat-card-button)').forEach((card) => {
@@ -1534,6 +1539,8 @@ function runQuickAreaCalc(area) {
 
 async function runCalculation(options = {}) {
   const { silent = false } = options;
+  const gen = ++calcGeneration;
+  clearTimeout(autoRecalcTimer);
   const errors = validateBeforeCalc();
   if (errors.length) {
     if (!silent) showValidationErrors(errors);
@@ -1543,10 +1550,13 @@ async function runCalculation(options = {}) {
   if (!silent) showValidationErrors([]);
 
   const f = els.form;
-  if (state.inputMode === 'area') {
+  const inputMode = state.inputMode;
+  const areaWalls = state.areaWalls.map(w => ({ ...w }));
+  let calcOptions;
+  if (inputMode === 'area') {
     const ceilingArea = parseFloat(f.areaOnlyInput?.value) || 0;
-    const wallIds = state.areaWalls.filter((w) => w.enabled && w.area > 0).map((w) => w.id);
-    state.options = {
+    const wallIds = areaWalls.filter((w) => w.enabled && w.area > 0).map((w) => w.id);
+    calcOptions = {
       calcCeiling: ceilingArea > 0,
       selectedWallIds: wallIds,
       calcWalls: wallIds.length > 0,
@@ -1555,7 +1565,7 @@ async function runCalculation(options = {}) {
       wallMounting: 'wall_frameless',
     };
   } else {
-    state.options = {
+    calcOptions = {
       calcCeiling: f.calcCeiling.checked,
       selectedWallIds: readSelectedWallIds(),
       calcWalls: readSelectedWallIds().length > 0,
@@ -1564,21 +1574,26 @@ async function runCalculation(options = {}) {
     };
   }
 
-  let calcRoom = state.room;
-  const useAreaPath = state.inputMode === 'area' || (state.inputMode === 'dims' && state.forceAreaBySize);
+  let calcRoom = state.room.clone();
+  let ceilingResult = state.ceilingResult;
+  let ceilingCalc = state.ceilingCalc;
+  let wallResult = null;
+  let nextLayoutKey = lastCeilingLayoutKey;
+  const useAreaPath = inputMode === 'area' || (inputMode === 'dims' && state.forceAreaBySize);
 
   if (useAreaPath) {
-    const ceilingArea = state.inputMode === 'area'
+    const ceilingArea = inputMode === 'area'
       ? (parseFloat(f.areaOnlyInput.value) || 0)
       : (parseFloat(f.quickLength?.value) || 0) * (parseFloat(f.quickWidth?.value) || 0);
     state.areaValue = ceilingArea;
 
-    if (state.options.calcCeiling && state.options.selectedWallIds.length === 0) {
+    if (calcOptions.calcCeiling && calcOptions.selectedWallIds.length === 0) {
+      state.options = calcOptions;
       runQuickAreaCalc(ceilingArea);
       return true;
     }
 
-    if (state.options.calcCeiling && ceilingArea > 0) {
+    if (calcOptions.calcCeiling && ceilingArea > 0) {
       const side = Math.sqrt(ceilingArea);
       const verts = createRectangleVertices(side, side);
       calcRoom = Room.createDefault();
@@ -1589,24 +1604,18 @@ async function runCalculation(options = {}) {
     }
   }
 
-  state.calcRoom = calcRoom;
-
-  state.wallResult = null;
-
-  const gen = ++calcGeneration;
-
-  if (state.options.calcCeiling && !useAreaPath) {
-    const layoutKey = buildCeilingLayoutKey(calcRoom.vertices);
+  if (calcOptions.calcCeiling && !useAreaPath) {
+    const layoutKey = buildCeilingLayoutKey(calcRoom.vertices, calcOptions);
     const canReuse =
-      lastCeilingLayoutKey === layoutKey &&
-      state.ceilingResult?.panels &&
-      state.ceilingCalc;
+      nextLayoutKey === layoutKey &&
+      ceilingResult?.panels &&
+      ceilingCalc;
     if (!canReuse) {
       markStatsRecalculating();
       const calc = new PolygonPanelCalculator(calcRoom.vertices);
       const lowEnd = prefersLowEndCalc();
       // Yield between candidates so sketch UI can paint on weak phones
-      const ceilingResult = await calc.calculateBestSchemeAsync({
+      const computedCeiling = await calc.calculateBestSchemeAsync({
         fast: lowEnd,
         yieldFn: () =>
           new Promise((resolve) => {
@@ -1618,19 +1627,19 @@ async function runCalculation(options = {}) {
           }),
       });
       if (gen !== calcGeneration) return false;
-      state.ceilingCalc = calc;
-      state.ceilingResult = ceilingResult;
-      lastCeilingLayoutKey = layoutKey;
+      ceilingCalc = calc;
+      ceilingResult = computedCeiling;
+      nextLayoutKey = layoutKey;
     }
-  } else if (state.options.calcCeiling && useAreaPath) {
-    state.ceilingResult = null;
-    state.ceilingCalc = null;
-    lastCeilingLayoutKey = null;
+  } else if (calcOptions.calcCeiling && useAreaPath) {
+    ceilingResult = null;
+    ceilingCalc = null;
+    nextLayoutKey = null;
 
     const area = state.areaValue || parseFloat(f.areaOnlyInput?.value) || 0;
     const panels = Math.ceil(area / PANEL_COVERAGE_AREA);
     const withReserve = Math.ceil(panels * (1 + RESERVES.panels));
-    state.ceilingResult = {
+    ceilingResult = {
       name: 'По площади',
       panels: [],
       stats: {
@@ -1647,18 +1656,18 @@ async function runCalculation(options = {}) {
         },
       },
     };
-    state.ceilingCalc = new PolygonPanelCalculator(calcRoom.vertices);
-  } else if (!state.options.calcCeiling) {
-    state.ceilingResult = null;
-    state.ceilingCalc = null;
-    lastCeilingLayoutKey = null;
+    ceilingCalc = new PolygonPanelCalculator(calcRoom.vertices);
+  } else if (!calcOptions.calcCeiling) {
+    ceilingResult = null;
+    ceilingCalc = null;
+    nextLayoutKey = null;
   }
 
   if (gen !== calcGeneration) return false;
 
-  if (state.options.selectedWallIds.length > 0 && state.inputMode === 'area') {
-    const walls = state.areaWalls.filter((w) => w.enabled && w.area > 0);
-    state.wallResult = {
+  if (calcOptions.selectedWallIds.length > 0 && inputMode === 'area') {
+    const walls = areaWalls.filter((w) => w.enabled && w.area > 0);
+    wallResult = {
       wallResults: walls.map((w, i) => {
         const panelCount = Math.ceil(w.area / PANEL_COVERAGE_AREA);
         return {
@@ -1671,21 +1680,21 @@ async function runCalculation(options = {}) {
       }),
       stats: buildAreaWallStats(walls),
     };
-  } else if (state.options.selectedWallIds.length > 0 && !useAreaPath) {
+  } else if (calcOptions.selectedWallIds.length > 0 && !useAreaPath) {
     const wc = new WallCalculator(calcRoom);
     const allResults = wc.calculateAllWalls();
-    const selected = new Set(state.options.selectedWallIds);
+    const selected = new Set(calcOptions.selectedWallIds);
     const wallResults = allResults.filter((wr) => selected.has(wr.wall.id));
-    state.wallResult = {
+    wallResult = {
       wallResults,
       stats: wc.getCombinedStatistics(wallResults),
     };
-  } else if (state.options.selectedWallIds.length > 0 && state.inputMode === 'dims' && state.forceAreaBySize) {
+  } else if (calcOptions.selectedWallIds.length > 0 && inputMode === 'dims' && state.forceAreaBySize) {
     const L = parseFloat(f.quickLength?.value) || 0;
     const W = parseFloat(f.quickWidth?.value) || 0;
     const H = parseFloat(f.quickHeight?.value) || 2.7;
     let walls = state.room.walls
-      .filter((w) => state.options.selectedWallIds.includes(w.id))
+      .filter((w) => calcOptions.selectedWallIds.includes(w.id))
       .map((w) => ({ id: w.id, area: w.length * H, enabled: true }));
     if (!walls.length) {
       walls = [
@@ -1695,7 +1704,7 @@ async function runCalculation(options = {}) {
         { id: 'aw-d', area: W * H, enabled: true },
       ];
     }
-    state.wallResult = {
+    wallResult = {
       wallResults: walls.map((w, i) => {
         const panelCount = Math.ceil(w.area / PANEL_COVERAGE_AREA);
         return {
@@ -1710,25 +1719,29 @@ async function runCalculation(options = {}) {
     };
   }
 
-  state.bom = buildBOM({
+  const bom = buildBOM({
     room: calcRoom,
-    ceilingResult: state.ceilingResult,
-    wallResult: state.wallResult,
-    options: state.options,
+    ceilingResult,
+    wallResult,
+    options: calcOptions,
   });
 
+  if (gen !== calcGeneration) return false;
+  // Publish one consistent snapshot after the async work, never partial results.
+  Object.assign(state, { calcRoom, ceilingCalc, ceilingResult, wallResult, bom, options: calcOptions });
+  lastCeilingLayoutKey = nextLayoutKey;
   state.hasResults = true;
   state.resultsStale = false;
   applyResultsToUi();
   $('resultsTabs').style.display = 'flex';
 
   populateWallSelect();
-  if (state.ceilingResult && state.ceilingCalc && !useAreaPath) {
+  if (ceilingResult && ceilingCalc && !useAreaPath) {
     sketchEditor?.setPanelLayout?.({
-      panels: state.ceilingResult.panels,
-      offsetX: state.ceilingCalc.offsetX,
-      offsetY: state.ceilingCalc.offsetY,
-      stats: state.ceilingResult.stats,
+      panels: ceilingResult.panels,
+      offsetX: ceilingCalc.offsetX,
+      offsetY: ceilingCalc.offsetY,
+      stats: ceilingResult.stats,
     });
   }
   syncPlanOverlayOptions();
@@ -1980,9 +1993,8 @@ function setupMobileActions() {
     } else if (state.inputMode === 'draw' && !onboardingDemoActive) {
       enterMobileSketchStep();
     }
-    syncResultsAsideVisibility();
+    updateLayoutMode();
     updateSchemeModeUi();
-    syncCalcButtons();
     fitSketchAfterLayoutChange();
   });
   window.matchMedia(LAPTOP_MQ).addEventListener('change', () => {

@@ -2817,7 +2817,7 @@ export class SketchEditor {
     this.future = [];
     this._removeBackgroundImage(false);
     if (this.room) this.room.openings = [];
-    this.vertices = cloneVertices(vertices);
+    this.vertices = vertices.map((v, i) => ({ x: v.x, y: v.y, label: labelForIndex(i) }));
     this.edgeDimensions = { ...edgeDimensions };
     this.diagonalDimensions = {};
     this.closed = true;
