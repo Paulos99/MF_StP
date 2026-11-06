@@ -14,7 +14,3 @@ _pdf_extract.txt
 # OS
 .DS_Store
 Thumbs.db
-
-# Generated, self-hosted plan recognition assets
-public/ocr/
-public/plan-import/
