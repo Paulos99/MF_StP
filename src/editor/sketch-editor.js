@@ -324,8 +324,9 @@ export class SketchEditor {
       });
     });
 
-    this._q('#sketchPlanImportBtn')?.addEventListener('click', () => this._openPlanImport());
-
+    this._q('#sketchBgUploadBtn')?.addEventListener('click', () => {
+      this.bgUploadInput?.click();
+    });
     this.edgeEditSizeBtn?.addEventListener('click', (e) => {
       e.stopPropagation();
       this._showKeypadForSelectedEdge();
@@ -451,7 +452,6 @@ export class SketchEditor {
   }
 
   activate({ room, startTutorial = false } = {}) {
-    this._planImport?.close();
     this.room = room ?? null;
     this._active = true;
     const hasShape = (room?.vertices?.length ?? 0) >= 3;
@@ -608,7 +608,6 @@ export class SketchEditor {
   }
 
   close(save) {
-    this._planImport?.close();
     if (this.inline) {
       if (save && this._canSave()) this._emitApply();
       return;
@@ -1138,7 +1137,7 @@ export class SketchEditor {
       'sketchRedoBtn',
       'sketchClearBtn',
       'sketchTemplatesBtn',
-      'sketchPlanImportBtn',
+      'sketchBgUploadBtn',
       'sketchHelpBtn',
     ].forEach((id) => {
       const el = this._q(`#${id}`);
@@ -2788,94 +2787,43 @@ export class SketchEditor {
     this._updateSnapLegend();
   }
 
-  async _openPlanImport() {
-    if (this.geometryLocked || this._planImport || this._planImportLoading) return;
-    this._planImportLoading = true;
-    const room = this.room;
-    try {
-      const { openPlanImport } = await import('../plan-import/dialog.js');
-      if (this.room !== room || this.geometryLocked || !this._active) return;
-      this.onboarding?.dismiss();
-      this._planImport = openPlanImport({
-        onApply: geometry => {
-          if (this.room === room && !this.geometryLocked) this._applyImportedPlan(geometry);
-        },
-        onUseBackground: image => {
-          if (this.room === room && !this.geometryLocked) this._setBackgroundImage(image);
-        },
-        onClose: () => { this._planImport = null; },
-      });
-    } catch {
-      this.showToast('Не удалось открыть фото плана. Обновите страницу и попробуйте ещё раз.');
-    } finally { this._planImportLoading = false; }
-  }
-
-  _applyImportedPlan({ vertices, edgeDimensions }) {
-    // Only called by the reviewed draft's explicit Apply action. No work per drag.
-    this.history = [];
-    this.future = [];
-    this._removeBackgroundImage(false);
-    if (this.room) this.room.openings = [];
-    this.vertices = vertices.map((v, i) => ({ x: v.x, y: v.y, label: labelForIndex(i) }));
-    this.edgeDimensions = { ...edgeDimensions };
-    this.diagonalDimensions = {};
-    this.closed = true;
-    this._selectedEdge = null;
-    this._selectedDiagonal = null;
-    this.selectedOpeningId = null;
-    this._previewPoint = null;
-    this.keypad?.hide();
-    this._clearPanelOverlay();
-    this._syncRoomFromShape();
-    this._markGeometryEditing('plan-import');
-    this._scheduleFit(true);
-    this.render();
-    this._updateUi();
-    this._beginPanelSettle();
-  }
-
   _loadBackgroundImage(file) {
     if (!file.type.startsWith('image/')) {
       this.showToast('Выберите файл изображения');
       return;
     }
+    if (this._bgObjectUrl) URL.revokeObjectURL(this._bgObjectUrl);
     const url = URL.createObjectURL(file);
     const img = new Image();
     img.onload = () => {
-      this._setBackgroundImage(img, url);
+      this.bgImage = img;
+      this._bgObjectUrl = url;
+      const { w, h } = this._getCanvasSize();
+      const center = this.canvasToWorld(w / 2, h / 2);
+      const viewWidthM = w / (PX_PER_M * this.zoom);
+      this._bgBaseWidthM = viewWidthM * 0.75;
+      this.bgTransform = {
+        cx: center.x,
+        cy: center.y,
+        widthM: this._bgBaseWidthM,
+        opacity: 0.45,
+      };
+      this._cancelBgCalibration(false);
+      this._bgScaleLocked = false;
+      this.bgAdjustMode = true;
+      if (this.bgOpacityInput) this.bgOpacityInput.value = '45';
+      if (this.bgScaleInput) this.bgScaleInput.value = '100';
+      this._syncBgWidthInput();
+      this._updateBgUi();
+      this._updateUi();
+      this.render();
+      this._startBgCalibration();
     };
     img.onerror = () => {
       URL.revokeObjectURL(url);
       this.showToast('Не удалось загрузить изображение');
     };
     img.src = url;
-  }
-
-  _setBackgroundImage(img, url = null) {
-    // Shared by the original image loader and the reviewed photo-plan flow.
-    this._removeBackgroundImage(false);
-    this.bgImage = img;
-    this._bgObjectUrl = url;
-    const { w, h } = this._getCanvasSize();
-    const center = this.canvasToWorld(w / 2, h / 2);
-    const viewWidthM = w / (PX_PER_M * this.zoom);
-    this._bgBaseWidthM = viewWidthM * 0.75;
-    this.bgTransform = {
-      cx: center.x,
-      cy: center.y,
-      widthM: this._bgBaseWidthM,
-      opacity: 0.45,
-    };
-    this._cancelBgCalibration(false);
-    this._bgScaleLocked = false;
-    this.bgAdjustMode = true;
-    if (this.bgOpacityInput) this.bgOpacityInput.value = '45';
-    if (this.bgScaleInput) this.bgScaleInput.value = '100';
-    this._syncBgWidthInput();
-    this._updateBgUi();
-    this._updateUi();
-    this.render();
-    this._startBgCalibration();
   }
 
   _removeBackgroundImage(updateUi = true) {
