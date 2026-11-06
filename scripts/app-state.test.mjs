@@ -41,7 +41,7 @@ function harness() {
     clearTimeout: id => timers.delete(id),
   });
   vm.runInContext(source + `\ncacheElements(); globalThis.qa = {state, els, validation: [], selectedWallIds: [],
-    animateStatValue, updateStatCards, updateLayoutMode, setupMobileActions, runCalculation,
+    animateStatValue, updateStatCards, updateLayoutMode, setupMobileActions, setupModeToggles, runCalculation,
     clearResultsUi, scheduleAutoRecalc, markPanelPreviewStale};
     validateBeforeCalc = () => qa.validation;
     readSelectedWallIds = () => qa.selectedWallIds;
@@ -62,6 +62,7 @@ function harness() {
     assert.equal(frames.size, 0);
   };
   return { qa, document, requests, timers, frames, flushFrames,
+    setEditor: editor => { qa.testEditor = editor; vm.runInContext('sketchEditor = qa.testEditor', context); },
     stepFrames: time => { const batch = [...frames.values()]; frames.clear(); for (const fn of batch) fn(time); },
     setMotion: value => { reduceMotion = value; },
     resize: value => { mobile = value; media.get('(max-width: 899px)')?.listener?.(); },
@@ -176,4 +177,10 @@ test('request snapshots room/openings/options rather than reading live mutable s
   request.resolve(calculate(rectangle())); assert.equal(await pending, true);
   assert.equal(h.qa.state.calcRoom.wallHeight, 2.7); assert.equal(h.qa.state.options.wallMounting, 'wall_frameless');
   assert.equal(h.qa.state.bom.walls.area, 37.800000000000004);
+});
+test('sidebar photo button routes to the same unified flow, not a second upload input', () => {
+  const h = harness(); let opens = 0;
+  h.setEditor({ _openPlanImport() { opens++; } });
+  h.qa.setupModeToggles(); h.get('drawUploadPhotoBtn').click();
+  assert.equal(opens, 1); assert.equal(h.document.getElementById('sketchBgUploadBtn'), null);
 });
